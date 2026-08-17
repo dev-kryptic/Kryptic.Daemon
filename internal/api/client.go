@@ -15,6 +15,10 @@ import (
 // (self-hosted deployments, local development).
 const DefaultBaseURL = "https://daemon.kryptic.dev"
 
+// DefaultPipelinesBaseURL points at the hosted Pipelines BFF (CI/CD);
+// KRYPTIC_PIPELINES_API overrides it.
+const DefaultPipelinesBaseURL = "https://pipelines.kryptic.dev"
+
 type Client struct {
 	BaseURL string
 	HTTP    *http.Client
@@ -24,6 +28,16 @@ func NewClient() *Client {
 	base := os.Getenv("KRYPTIC_API")
 	if base == "" {
 		base = DefaultBaseURL
+	}
+	return &Client{BaseURL: base, HTTP: &http.Client{Timeout: 15 * time.Second}}
+}
+
+// NewPipelinesClient targets the Pipelines BFF, which speaks machine tokens
+// (client credentials) instead of the daemon's user device flow.
+func NewPipelinesClient() *Client {
+	base := os.Getenv("KRYPTIC_PIPELINES_API")
+	if base == "" {
+		base = DefaultPipelinesBaseURL
 	}
 	return &Client{BaseURL: base, HTTP: &http.Client{Timeout: 15 * time.Second}}
 }
@@ -48,14 +62,22 @@ type Me struct {
 	Organization string `json:"organization"`
 }
 
+// BundleEntry is one ciphertext envelope. The daemon decrypts it locally with
+// the org key; the definition/environment ids rebuild the associated data.
 type BundleEntry struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
+	Key           string `json:"key"`
+	Envelope      string `json:"envelope"`
+	DefinitionId  string `json:"definitionId"`
+	EnvironmentId string `json:"environmentId"`
 }
 
+// Bundle is the end-to-end encrypted response: envelopes plus the org key
+// sealed to this device's public key. The server cannot open any of it.
 type Bundle struct {
 	ProjectPublicId string        `json:"projectPublicId"`
 	Environment     string        `json:"environment"`
+	OrgKeyId        string        `json:"orgKeyId"`
+	WrappedOrgKey   string        `json:"wrappedOrgKey"`
 	Secrets         []BundleEntry `json:"secrets"`
 }
 
@@ -76,10 +98,14 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("%d: %s", e.Status, e.Message)
 }
 
-func (c *Client) DeviceStart(deviceName, platform, version string) (*DeviceStart, error) {
+// DeviceStart begins the device flow. devicePublicKey is the device's
+// sealed-box public key (base64url 65-byte SEC1 point); the approving admin
+// seals the org key to it so this device can decrypt bundles.
+func (c *Client) DeviceStart(deviceName, platform, version, devicePublicKey string) (*DeviceStart, error) {
 	var out DeviceStart
 	err := c.post("/api/auth/device/start", "", map[string]string{
 		"deviceName": deviceName, "platform": platform, "daemonVersion": version,
+		"devicePublicKey": devicePublicKey,
 	}, &out)
 	return &out, err
 }
@@ -130,6 +156,34 @@ func (c *Client) Projects(accessToken string) ([]Project, error) {
 	var out []Project
 	err := c.get("/api/secrets/projects", accessToken, &out)
 	return out, err
+}
+
+// ---------- machine (CI) endpoints, Pipelines BFF ----------
+
+// MachineKeys is the machine's own key record: the private key arrives wrapped
+// by an Argon2id key derived from the client secret, so only a caller holding
+// the secret can use it.
+type MachineKeys struct {
+	PublicKey            string `json:"publicKey"`
+	WrappedPrivateKey    string `json:"wrappedPrivateKey"`
+	KdfSalt              string `json:"kdfSalt"`
+	KdfParametersVersion int    `json:"kdfParametersVersion"`
+}
+
+// MachineToken exchanges client credentials for a short-lived machine token.
+func (c *Client) MachineToken(clientId, clientSecret string) (*Tokens, error) {
+	var out Tokens
+	err := c.post("/api/token", "", map[string]string{
+		"clientId": clientId, "clientSecret": clientSecret,
+	}, &out)
+	return &out, err
+}
+
+// MachineKeysMe fetches the machine's key record.
+func (c *Client) MachineKeysMe(accessToken string) (*MachineKeys, error) {
+	var out MachineKeys
+	err := c.get("/api/keys/me", accessToken, &out)
+	return &out, err
 }
 
 // ---------- plumbing ----------

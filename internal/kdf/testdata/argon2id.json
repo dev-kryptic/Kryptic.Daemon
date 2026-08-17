@@ -1,0 +1,11 @@
+{
+  "description": "Kryptic Argon2id interop known-answer test for parameter set V1 (64 MiB, 3 iterations, 4 lanes, 32-byte output). Every runtime deriving the vault key from a passphrase must reproduce this output.",
+  "parameterSetVersion": 1,
+  "memoryKibibytes": 65536,
+  "iterations": 3,
+  "parallelism": 4,
+  "outputLengthBytes": 32,
+  "passphrase": "correct horse battery staple",
+  "saltHex": "000102030405060708090a0b0c0d0e0f",
+  "derivedKeyHex": "853b272a44db1421c02962669a55eb0994f3cab385ed1c4c79253eee19bab49e"
+}

@@ -1,13 +1,14 @@
-// Package authstore keeps the daemon's refresh token in the OS credential
-// store: the user Keychain on macOS (via /usr/bin/security), the Credential
-// Manager on Windows (advapi32), and libsecret on Linux (via secret-tool).
-// When the platform store is unavailable (e.g. a headless Linux box without a
-// Secret Service), it falls back to a 0600 file under the user config
-// directory. Access tokens are never persisted - they live in daemon memory
-// only.
+// Package authstore keeps the daemon's session - the refresh token and the
+// device's sealed-box key pair - in the OS credential store: the user Keychain
+// on macOS (via /usr/bin/security), the Credential Manager on Windows
+// (advapi32), and libsecret on Linux (via secret-tool). When the platform
+// store is unavailable (e.g. a headless Linux box without a Secret Service),
+// it falls back to a 0600 file under the user config directory. Access tokens
+// are never persisted - they live in daemon memory only.
 package authstore
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -16,28 +17,56 @@ import (
 
 var ErrNotLoggedIn = errors.New("not logged in - run `kryptic login` first")
 
-// Save stores the refresh token in the platform credential store, falling
+// Session is everything the daemon persists between runs. The device private
+// key opens the org-key grant sealed to this device (end-to-end encryption);
+// it exists nowhere else, so clearing the session also revokes the device's
+// ability to decrypt.
+type Session struct {
+	RefreshToken string `json:"refreshToken"`
+	// Base64url 65-byte uncompressed SEC1 P-256 point, as registered at login.
+	DevicePublicKey string `json:"devicePublicKey,omitempty"`
+	// Base64url 32-byte P-256 scalar. Never leaves this machine.
+	DevicePrivateKey string `json:"devicePrivateKey,omitempty"`
+}
+
+// SaveSession stores the session in the platform credential store, falling
 // back to the config-dir file when the store is unavailable.
-func Save(refreshToken string) error {
-	if err := platformSave(refreshToken); err == nil {
+func SaveSession(session Session) error {
+	data, err := json.Marshal(session)
+	if err != nil {
+		return err
+	}
+	if err := platformSave(string(data)); err == nil {
 		// A stale file copy must not shadow the platform store on later loads.
 		if path, pathErr := filePath(); pathErr == nil {
 			_ = os.Remove(path)
 		}
 		return nil
 	}
-	return saveFile(refreshToken)
+	return saveFile(string(data))
 }
 
-// Load reads the refresh token, preferring the platform credential store.
-func Load() (string, error) {
-	if token, err := platformLoad(); err == nil && token != "" {
-		return token, nil
+// LoadSession reads the session, preferring the platform credential store.
+func LoadSession() (Session, error) {
+	raw, err := platformLoad()
+	if err != nil || raw == "" {
+		raw, err = loadFile()
+		if err != nil {
+			return Session{}, err
+		}
 	}
-	return loadFile()
+	return decodeSession(raw)
 }
 
-// Clear removes the refresh token from both the platform store and the file
+func decodeSession(raw string) (Session, error) {
+	var session Session
+	if json.Unmarshal([]byte(raw), &session) != nil || session.RefreshToken == "" {
+		return Session{}, ErrNotLoggedIn
+	}
+	return session, nil
+}
+
+// Clear removes the session from both the platform store and the file
 // fallback (whichever holds it).
 func Clear() error {
 	platformClear()
