@@ -1,6 +1,6 @@
 .DS_Store
 .idea/
-kryptic
+/kryptic
 macos/.build/
 macos/dist/
 macos/.swiftpm/
