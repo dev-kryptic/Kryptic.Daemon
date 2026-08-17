@@ -1,0 +1,23 @@
+# systemd user unit for the Kryptic daemon.
+# Install: cp kryptic-daemon.service ~/.config/systemd/user/
+#          systemctl --user enable --now kryptic-daemon
+[Unit]
+Description=Kryptic secrets daemon
+Documentation=https://docs.kryptic.dev
+After=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/kryptic start
+Restart=on-failure
+RestartSec=5
+
+# The daemon holds secrets in memory only; harden what systemd can harden.
+NoNewPrivileges=true
+PrivateTmp=false
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.config/kryptic
+ReadWritePaths=/tmp
+
+[Install]
+WantedBy=default.target

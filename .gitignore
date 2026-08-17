@@ -1,0 +1,7 @@
+.DS_Store
+.idea/
+kryptic
+macos/.build/
+macos/dist/
+macos/.swiftpm/
+dist/
