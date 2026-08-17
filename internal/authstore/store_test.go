@@ -1,6 +1,7 @@
 package authstore
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -63,6 +64,46 @@ func TestLoadWithoutSessionReturnsNotLoggedIn(t *testing.T) {
 
 	if _, err := loadFile(); err != ErrNotLoggedIn {
 		t.Fatalf("err = %v, want ErrNotLoggedIn", err)
+	}
+}
+
+// The encode/decode layer is tested directly so the tests never touch the real
+// platform credential store of the machine running them.
+func TestSessionRoundTripsDeviceKeys(t *testing.T) {
+	withTempConfigDir(t)
+
+	saved := Session{
+		RefreshToken:     "rt_secret_token",
+		DevicePublicKey:  "BPubKey",
+		DevicePrivateKey: "PrivKey",
+	}
+	data, err := json.Marshal(saved)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := saveFile(string(data)); err != nil {
+		t.Fatalf("saveFile: %v", err)
+	}
+
+	raw, err := loadFile()
+	if err != nil {
+		t.Fatalf("loadFile: %v", err)
+	}
+	loaded, err := decodeSession(raw)
+	if err != nil {
+		t.Fatalf("decodeSession: %v", err)
+	}
+	if loaded != saved {
+		t.Fatalf("loaded %+v, want %+v", loaded, saved)
+	}
+}
+
+func TestCorruptSessionReturnsNotLoggedIn(t *testing.T) {
+	if _, err := decodeSession("not-json"); err != ErrNotLoggedIn {
+		t.Fatalf("err = %v, want ErrNotLoggedIn", err)
+	}
+	if _, err := decodeSession(`{"devicePublicKey":"x"}`); err != ErrNotLoggedIn {
+		t.Fatalf("missing refresh token: err = %v, want ErrNotLoggedIn", err)
 	}
 }
 

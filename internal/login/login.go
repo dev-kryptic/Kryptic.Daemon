@@ -3,6 +3,7 @@
 package login
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,15 +12,26 @@ import (
 
 	"github.com/dev-kryptic/daemon/internal/api"
 	"github.com/dev-kryptic/daemon/internal/authstore"
+	"github.com/dev-kryptic/daemon/internal/sealedbox"
 	"github.com/dev-kryptic/daemon/internal/server"
 )
 
-// Run performs the device flow: `notify` fires once with the user code and
-// verification URL (the CLI prints them, the tray shows a menu item), the
-// browser is opened, and the flow polls until approval or expiry.
+// Run performs the device flow: a fresh sealed-box key pair is generated for
+// this device and its public key registered with the login, `notify` fires
+// once with the user code and verification URL (the CLI prints them, the tray
+// shows a menu item), the browser is opened, and the flow polls until approval
+// or expiry. The private key is stored with the session - it is what lets this
+// device open the org-key grant an admin seals to it.
 func Run(client *api.Client, notify func(userCode, verificationURL string)) (*api.Me, error) {
+	keyPair, err := sealedbox.GenerateKeyPair()
+	if err != nil {
+		return nil, err
+	}
+	enc := base64.RawURLEncoding
+	devicePublicKey := enc.EncodeToString(keyPair.Public)
+
 	hostname, _ := os.Hostname()
-	start, err := client.DeviceStart(hostname, runtime.GOOS, server.Version)
+	start, err := client.DeviceStart(hostname, runtime.GOOS, server.Version, devicePublicKey)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +53,12 @@ func Run(client *api.Client, notify func(userCode, verificationURL string)) (*ap
 			continue // still pending
 		}
 
-		if err := authstore.Save(tokens.RefreshToken); err != nil {
+		session := authstore.Session{
+			RefreshToken:     tokens.RefreshToken,
+			DevicePublicKey:  devicePublicKey,
+			DevicePrivateKey: enc.EncodeToString(keyPair.Private),
+		}
+		if err := authstore.SaveSession(session); err != nil {
 			return nil, err
 		}
 		return client.Me(tokens.AccessToken)
@@ -49,11 +66,13 @@ func Run(client *api.Client, notify func(userCode, verificationURL string)) (*ap
 	return nil, fmt.Errorf("the sign-in code expired - try signing in again")
 }
 
-// Logout revokes the server-side session (best effort) and clears the stored token.
+// Logout revokes the server-side session (best effort) and clears the stored
+// session - including the device private key, so this device can no longer
+// decrypt even if ciphertext was captured.
 func Logout(client *api.Client) error {
-	refreshToken, err := authstore.Load()
+	session, err := authstore.LoadSession()
 	if err == nil {
-		if tokens, refreshErr := client.Refresh(refreshToken); refreshErr == nil {
+		if tokens, refreshErr := client.Refresh(session.RefreshToken); refreshErr == nil {
 			_ = client.Logout(tokens.AccessToken)
 		}
 	}

@@ -1,0 +1,13 @@
+{
+  "description": "Kryptic sealed-box P-256 interop known-answer test. Every runtime (C#, Go, WebCrypto) must satisfy: (1) Open(recipientPrivateKey, sealed) yields plaintext; (2) sealing plaintext to recipientPublicKey using the fixed ephemeral key reproduces `sealed` byte-for-byte. See docs/PHASE-2-TASKS.md for the wire format.",
+  "curve": "P-256",
+  "kdf": "HKDF-SHA256, salt empty, info = \"kryptic-sealed-box-v1\" || ephemeralPublicKey || recipientPublicKey; expand to 44 bytes = 32-byte AES key || 12-byte nonce (nonce is derived, not random)",
+  "aead": "AES-256-GCM, 12-byte nonce, 16-byte tag",
+  "recipientKeyId": "ukey_kat0000001",
+  "recipientPrivateKeyHex": "592b6d272d0772646d3c56ea4b9edd58233300625dab172dc040b786d4a075ce",
+  "recipientPublicKeyHex": "040a11896ad7e826e004d465f06914e07dab55efbbeb37ac759e5fe5a5fe60ea8b2f2a61bec92d1ed8b536ee6aec103a7453569d63c110f3dbc1324824b9434d75",
+  "ephemeralPrivateKeyHex": "a0691118723dcfd84428c9dea00239edacacd34d926d3b09fb9b6831be3aef3f",
+  "ephemeralPublicKeyHex": "04c68949167fd130f344cde19a3e5cd35a8e735c8eb0ab16b2308e1768db023e2925821410714f5e6d44e8ff889a762d484efed54a9f0e8d9f8a3ea603d8d80bc5",
+  "plaintextHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "sealed": "sbx.v1.ukey_kat0000001.BMaJSRZ_0TDzRM3hmj5c01qOc1yOsKsWsjCOF2jbAj4pJYIUEHFPXm1E6P-ImnYtSE7-1UqfDo2fij6mA9jYC8U.r00fMMooQL4X1LTm.rtb52U4qiZVXwlBIwVnVSMViNIs90ODkR7yJB4fdWduvlg8RJmxBj8DQVmsdE5Oh"
+}

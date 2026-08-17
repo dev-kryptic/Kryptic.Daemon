@@ -1,11 +1,18 @@
 // Package server implements the local socket side of daemon/PROTOCOL.md v1:
 // SDKs connect, send one NDJSON request ("secrets" or "status"), get one reply.
 // Secrets are cached in memory for 5 minutes and never touch disk.
+//
+// Bundles arrive end-to-end encrypted: ciphertext envelopes plus the org key
+// sealed to this device. The daemon unwraps the org key with the device
+// private key (stored at login) and decrypts every envelope locally - the
+// platform never sees a plaintext secret.
 package server
 
 import (
 	"bufio"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"sync"
@@ -13,7 +20,9 @@ import (
 
 	"github.com/dev-kryptic/daemon/internal/api"
 	"github.com/dev-kryptic/daemon/internal/authstore"
+	"github.com/dev-kryptic/daemon/internal/envelope"
 	"github.com/dev-kryptic/daemon/internal/ipc"
+	"github.com/dev-kryptic/daemon/internal/sealedbox"
 )
 
 const (
@@ -22,8 +31,14 @@ const (
 	Version         = "0.1.0"
 )
 
+// secretPair is what the local protocol serves to SDKs: already decrypted.
+type secretPair struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
 type cacheEntry struct {
-	secrets   []api.BundleEntry
+	secrets   []secretPair
 	fetchedAt time.Time
 }
 
@@ -139,7 +154,13 @@ func (s *Server) handleSecrets(req request) map[string]any {
 			case 401:
 				return errorResponse("not_authenticated", "session revoked - run `kryptic login`")
 			case 403:
-				return errorResponse("access_denied", "you have no access to this environment")
+				message := "you have no access to this environment"
+				// The platform also 403s when the device has no org-key grant
+				// yet (an admin must approve it) - surface that reason.
+				if apiError.Message != "" {
+					message = apiError.Message
+				}
+				return errorResponse("access_denied", message)
 			case 404:
 				return errorResponse("unknown_project", apiError.Message)
 			}
@@ -147,12 +168,60 @@ func (s *Server) handleSecrets(req request) map[string]any {
 		return errorResponse("internal", err.Error())
 	}
 
+	secrets, err := decryptBundle(bundle)
+	if err != nil {
+		log.Printf("bundle decrypt failed for %s/%s: %v", req.ProjectId, req.Environment, err)
+		return errorResponse("internal", err.Error())
+	}
+
 	s.mu.Lock()
-	s.cache[cacheKey] = cacheEntry{secrets: bundle.Secrets, fetchedAt: time.Now()}
+	s.cache[cacheKey] = cacheEntry{secrets: secrets, fetchedAt: time.Now()}
 	s.mu.Unlock()
 
-	log.Printf("served %d secrets for %s/%s", len(bundle.Secrets), req.ProjectId, req.Environment)
-	return map[string]any{"ok": true, "secrets": bundle.Secrets}
+	log.Printf("served %d secrets for %s/%s (decrypted locally)", len(secrets), req.ProjectId, req.Environment)
+	return map[string]any{"ok": true, "secrets": secrets}
+}
+
+// decryptBundle unwraps the org key with this device's private key and opens
+// every envelope. All crypto happens here, on the developer's machine.
+func decryptBundle(bundle *api.Bundle) ([]secretPair, error) {
+	session, err := authstore.LoadSession()
+	if err != nil {
+		return nil, err
+	}
+	if session.DevicePrivateKey == "" {
+		return nil, fmt.Errorf("this session has no device key - run `kryptic login` again")
+	}
+
+	enc := base64.RawURLEncoding
+	private, err := enc.DecodeString(session.DevicePrivateKey)
+	if err != nil {
+		return nil, fmt.Errorf("stored device key is corrupt - run `kryptic login` again")
+	}
+	public, err := enc.DecodeString(session.DevicePublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("stored device key is corrupt - run `kryptic login` again")
+	}
+
+	sealed, err := sealedbox.Parse(bundle.WrappedOrgKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid wrapped org key: %w", err)
+	}
+	orgKey, err := sealedbox.Open(sealedbox.KeyPair{Public: public, Private: private}, sealed)
+	if err != nil {
+		return nil, fmt.Errorf("could not unwrap the org key - the device grant may be stale, run `kryptic login` again")
+	}
+
+	secrets := make([]secretPair, 0, len(bundle.Secrets))
+	for _, entry := range bundle.Secrets {
+		associatedData := envelope.SecretContext(entry.DefinitionId, entry.EnvironmentId)
+		plaintext, err := envelope.Open(orgKey, entry.Envelope, associatedData)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt %q: %w", entry.Key, err)
+		}
+		secrets = append(secrets, secretPair{Key: entry.Key, Value: string(plaintext)})
+	}
+	return secrets, nil
 }
 
 // ResetAuth drops the in-memory access token and cached bundles - called by the
@@ -204,16 +273,18 @@ func (s *Server) token() (string, error) {
 		return s.accessToken, nil
 	}
 
-	refreshToken, err := authstore.Load()
+	session, err := authstore.LoadSession()
 	if err != nil {
 		return "", err
 	}
 
-	tokens, err := s.client.Refresh(refreshToken)
+	tokens, err := s.client.Refresh(session.RefreshToken)
 	if err != nil {
 		return "", err
 	}
-	if err := authstore.Save(tokens.RefreshToken); err != nil {
+	// The refresh token rotates on every use; the device keys must survive it.
+	session.RefreshToken = tokens.RefreshToken
+	if err := authstore.SaveSession(session); err != nil {
 		return "", err
 	}
 
