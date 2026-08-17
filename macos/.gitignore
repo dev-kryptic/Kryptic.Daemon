@@ -1,0 +1,5 @@
+.build/
+dist/
+Resources/Icons/
+.DS_Store
+*.xcuserstate
