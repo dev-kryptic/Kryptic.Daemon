@@ -10,9 +10,9 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/dev-kryptic/Kryptic.Encryption.Go/sealedbox"
 	"github.com/dev-kryptic/daemon/internal/api"
 	"github.com/dev-kryptic/daemon/internal/authstore"
-	"github.com/dev-kryptic/daemon/internal/sealedbox"
 	"github.com/dev-kryptic/daemon/internal/server"
 )
 

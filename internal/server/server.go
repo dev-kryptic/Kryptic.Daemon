@@ -18,11 +18,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dev-kryptic/Kryptic.Encryption.Go/envelope"
+	"github.com/dev-kryptic/Kryptic.Encryption.Go/sealedbox"
 	"github.com/dev-kryptic/daemon/internal/api"
 	"github.com/dev-kryptic/daemon/internal/authstore"
-	"github.com/dev-kryptic/daemon/internal/envelope"
 	"github.com/dev-kryptic/daemon/internal/ipc"
-	"github.com/dev-kryptic/daemon/internal/sealedbox"
 )
 
 const (
