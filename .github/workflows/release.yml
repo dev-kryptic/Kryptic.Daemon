@@ -52,7 +52,7 @@ jobs:
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
   macos:
-    name: macOS ${{ matrix.goarch }}
+    name: macOS ${{ matrix.display }}
     needs: validate
     strategy:
       fail-fast: false
@@ -60,13 +60,19 @@ jobs:
         include:
           - goarch: arm64
             runner: macos-15
+            label: apple-silicon
+            display: Apple Silicon
           - goarch: amd64
             runner: macos-15-intel
+            label: intel
+            display: Intel
 
     runs-on: ${{ matrix.runner }}
     environment: release-signing
     permissions:
       contents: read
+    env:
+      LABEL: ${{ matrix.label }}
 
     steps:
       - name: Checkout
@@ -185,7 +191,6 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ needs.validate.outputs.version }}
-          GOARCH: ${{ matrix.goarch }}
           INSTALLER_IDENTITY: ${{ vars.APPLE_DEVELOPER_ID_INSTALLER_IDENTITY }}
         run: |
           set -euo pipefail
@@ -197,13 +202,12 @@ jobs:
             --identifier "${BUNDLE_ID}.pkg" \
             --version "$VERSION" \
             --sign "$INSTALLER_IDENTITY" \
-            "release/Kryptic-${VERSION}-macos-${GOARCH}.pkg"
+            "release/Kryptic-${VERSION}-macos-${LABEL}.pkg"
 
       - name: Create signed DMG
         shell: bash
         env:
           VERSION: ${{ needs.validate.outputs.version }}
-          GOARCH: ${{ matrix.goarch }}
           APP_IDENTITY: ${{ vars.APPLE_DEVELOPER_ID_APPLICATION_IDENTITY }}
         run: |
           set -euo pipefail
@@ -218,11 +222,11 @@ jobs:
             -srcfolder "$DMG_ROOT" \
             -ov \
             -format UDZO \
-            "release/Kryptic-${VERSION}-macos-${GOARCH}.dmg"
+            "release/Kryptic-${VERSION}-macos-${LABEL}.dmg"
 
           codesign --force --timestamp \
             --sign "$APP_IDENTITY" \
-            "release/Kryptic-${VERSION}-macos-${GOARCH}.dmg"
+            "release/Kryptic-${VERSION}-macos-${LABEL}.dmg"
 
       - name: Prepare Apple notarization key
         shell: bash
@@ -240,12 +244,11 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ needs.validate.outputs.version }}
-          GOARCH: ${{ matrix.goarch }}
           NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
         run: |
           set -euo pipefail
-          PKG="release/Kryptic-${VERSION}-macos-${GOARCH}.pkg"
+          PKG="release/Kryptic-${VERSION}-macos-${LABEL}.pkg"
 
           command -v jq >/dev/null 2>&1 || brew install jq
 
@@ -309,12 +312,11 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ needs.validate.outputs.version }}
-          GOARCH: ${{ matrix.goarch }}
           NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
         run: |
           set -euo pipefail
-          DMG="release/Kryptic-${VERSION}-macos-${GOARCH}.dmg"
+          DMG="release/Kryptic-${VERSION}-macos-${LABEL}.dmg"
 
           command -v jq >/dev/null 2>&1 || brew install jq
 
@@ -378,11 +380,10 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ needs.validate.outputs.version }}
-          GOARCH: ${{ matrix.goarch }}
         run: |
           set -euo pipefail
           spctl --assess --type execute --verbose=4 "macos/dist/Kryptic.app"
-          spctl --assess --type install --verbose=4 "release/Kryptic-${VERSION}-macos-${GOARCH}.pkg"
+          spctl --assess --type install --verbose=4 "release/Kryptic-${VERSION}-macos-${LABEL}.pkg"
 
       - name: Copy signed app ZIP and standalone CLI
         shell: bash
@@ -392,13 +393,13 @@ jobs:
         run: |
           set -euo pipefail
           ditto -c -k --keepParent "macos/dist/Kryptic.app" \
-            "release/Kryptic-${VERSION}-macos-${GOARCH}.zip"
+            "release/Kryptic-${VERSION}-macos-${LABEL}.zip"
           cp "dist/kryptic_darwin_${GOARCH}" release/
 
       - name: Upload macOS release artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: release-macos-${{ matrix.goarch }}
+          name: release-macos-${{ matrix.label }}
           path: release/*
           if-no-files-found: error
           retention-days: 7
@@ -694,35 +695,6 @@ jobs:
 
           cp "dist/kryptic_linux_${GOARCH}" release/
           cp "dist/kryptic-tray_linux_${GOARCH}" release/
-
-      - name: Import Linux release signing key
-        shell: bash
-        env:
-          GPG_PRIVATE_KEY_B64: ${{ secrets.LINUX_GPG_PRIVATE_KEY_BASE64 }}
-        run: |
-          set -euo pipefail
-          echo "$GPG_PRIVATE_KEY_B64" | base64 --decode > "$RUNNER_TEMP/kryptic-release-signing.asc"
-          gpg --batch --import "$RUNNER_TEMP/kryptic-release-signing.asc"
-
-      - name: Sign DEB
-        shell: bash
-        env:
-          VERSION: ${{ needs.validate.outputs.version }}
-          DEBARCH: ${{ matrix.debarch }}
-          GPG_KEY_ID: ${{ secrets.LINUX_GPG_KEY_ID }}
-          GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
-        run: |
-          set -euo pipefail
-          DEB="release/kryptic_${VERSION}_${DEBARCH}.deb"
-
-          gpg --batch --yes --pinentry-mode loopback \
-            --passphrase "$GPG_PASSPHRASE" \
-            --local-user "$GPG_KEY_ID" \
-            --armor --detach-sign \
-            --output "${DEB}.asc" \
-            "$DEB"
-
-          gpg --verify "${DEB}.asc" "$DEB"
 
       - name: Upload Linux release artifacts
         uses: actions/upload-artifact@v7
