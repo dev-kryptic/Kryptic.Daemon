@@ -12,14 +12,14 @@ enum MenuBarIcon {
     }
 
     private static func loadSVG(named name: String) -> NSImage? {
-        guard let url = Bundle.module.url(forResource: name, withExtension: "svg") else {
+        guard let url = AppResources.url(forResource: name, withExtension: "svg") else {
             return nil
         }
         return NSImage(contentsOf: url)
     }
 
     private static func loadPNG(named name: String) -> NSImage? {
-        guard let url = Bundle.module.url(forResource: name, withExtension: "png"),
+        guard let url = AppResources.url(forResource: name, withExtension: "png"),
               let image = NSImage(contentsOf: url) else {
             return nil
         }

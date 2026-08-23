@@ -10,7 +10,7 @@ struct AboutView: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            if let logoURL = Bundle.module.url(forResource: logoName, withExtension: "png"),
+            if let logoURL = AppResources.url(forResource: logoName, withExtension: "png"),
                let logo = NSImage(contentsOf: logoURL) {
                 Image(nsImage: logo)
                     .resizable()

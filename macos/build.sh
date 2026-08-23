@@ -41,15 +41,16 @@ cp "$ROOT/.build/kryptic" "$APP_BUNDLE/Contents/MacOS/kryptic"
 cp "$ROOT/Sources/KrypticDaemon/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
 cp "$RESOURCES/"* "$APP_BUNDLE/Contents/Resources/"
 
-# SwiftPM's generated Bundle.module looks for this next to Contents.
-# Without it the menu-bar app fatalErrors on launch and exits silently
-# (LSUIElement hides the Dock icon, so it looks like a no-op).
+# The SwiftPM resource bundle must live under Contents/Resources: codesign
+# rejects anything else at the app bundle root ("unsealed contents").
+# AppResources.swift resolves it from there. Without it the menu-bar app has
+# no icons (and older builds using Bundle.module crashed on launch).
 RESOURCE_BUNDLE="$BUILD_DIR/KrypticDaemon_KrypticDaemon.bundle"
 if [[ ! -d "$RESOURCE_BUNDLE" ]]; then
   echo "Missing Swift resource bundle: $RESOURCE_BUNDLE" >&2
   exit 1
 fi
-cp -R "$RESOURCE_BUNDLE" "$APP_BUNDLE/KrypticDaemon_KrypticDaemon.bundle"
+cp -R "$RESOURCE_BUNDLE" "$APP_BUNDLE/Contents/Resources/KrypticDaemon_KrypticDaemon.bundle"
 
 echo "Done: $APP_BUNDLE ($CONFIGURATION)"
 echo "Run with: open \"$APP_BUNDLE\""
