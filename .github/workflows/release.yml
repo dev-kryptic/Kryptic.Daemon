@@ -737,7 +737,7 @@ jobs:
     needs:
       - validate
       - macos
-#      - windows
+      - windows
       - linux
 
     runs-on: ubuntu-latest
