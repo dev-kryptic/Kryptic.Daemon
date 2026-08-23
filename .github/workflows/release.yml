@@ -403,187 +403,208 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-#  windows:
-#    name: Windows amd64
-#    needs: validate
-#    runs-on: windows-2025
-#    environment: release-signing
-#    permissions:
-#      contents: read
-#      id-token: write
-#
-#    steps:
-#      - name: Checkout
-#        uses: actions/checkout@v7
-#        with:
-#          ref: ${{ needs.validate.outputs.tag }}
-#
-#      - name: Set up Go
-#        uses: actions/setup-go@v7
-#        with:
-#          go-version-file: go.mod
-#          cache-dependency-path: go.sum
-#
-#      - name: Build Windows executables
-#        shell: pwsh
-#        env:
-#          VERSION: ${{ needs.validate.outputs.version }}
-#        run: |
-#          New-Item -ItemType Directory -Force -Path dist | Out-Null
-#
-#          $env:CGO_ENABLED = "0"
-#          $env:GOOS = "windows"
-#          $env:GOARCH = "amd64"
-#          $versionFlag = "-X github.com/dev-kryptic/daemon/internal/server.Version=$env:VERSION"
-#
-#          go build -trimpath -ldflags $versionFlag -o dist/kryptic_windows_amd64.exe ./cmd/kryptic
-#          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-#
-#          go build -trimpath -ldflags "-H windowsgui $versionFlag" -o dist/kryptic-tray_windows_amd64.exe ./cmd/kryptic-tray
-#          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-#
-#      - name: Sign Windows executables with Azure Artifact Signing
-#        uses: azure/artifact-signing-action@v2
-#        with:
-#          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-#          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-#          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-#          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
-#          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT_NAME }}
-#          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE }}
-#          files: |
-#            ${{ github.workspace }}\dist\kryptic_windows_amd64.exe
-#            ${{ github.workspace }}\dist\kryptic-tray_windows_amd64.exe
-#          file-digest: SHA256
-#          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-#          timestamp-digest: SHA256
-#          description: Kryptic
-#          description-url: https://kryptic.dev
-#
-#      - name: Install Inno Setup
-#        shell: pwsh
-#        run: choco install innosetup -y --no-progress
-#
-#      - name: Generate Inno Setup definition
-#        shell: pwsh
-#        env:
-#          VERSION: ${{ needs.validate.outputs.version }}
-#          PUBLISHER: ${{ vars.COMPANY_NAME }}
-#          COMPANY_URL: ${{ vars.COMPANY_URL }}
-#        run: |
-#          New-Item -ItemType Directory -Force -Path release | Out-Null
-#
-#          $iss = @"
-#          [Setup]
-#          AppId={{8F594D7B-7F43-4A1E-9A1C-BA257604DB11}
-#          AppName=Kryptic
-#          AppVersion=$env:VERSION
-#          AppVerName=Kryptic $env:VERSION
-#          AppPublisher=$env:PUBLISHER
-#          AppPublisherURL=$env:COMPANY_URL
-#          AppSupportURL=https://kryptic.dev
-#          AppUpdatesURL=https://kryptic.dev
-#          DefaultDirName={autopf}\Kryptic
-#          DefaultGroupName=Kryptic
-#          UninstallDisplayIcon={app}\kryptic-tray.exe
-#          OutputDir=release
-#          OutputBaseFilename=Kryptic-Setup-$env:VERSION-windows-amd64
-#          Compression=lzma2
-#          SolidCompression=yes
-#          ArchitecturesAllowed=x64compatible
-#          ArchitecturesInstallIn64BitMode=x64compatible
-#          ChangesEnvironment=yes
-#          PrivilegesRequired=admin
-#          WizardStyle=modern
-#          VersionInfoVersion=$env:VERSION
-#          VersionInfoCompany=$env:PUBLISHER
-#          VersionInfoDescription=Kryptic Installer
-#          VersionInfoProductName=Kryptic
-#          VersionInfoProductVersion=$env:VERSION
-#
-#          [Files]
-#          Source: "dist\kryptic_windows_amd64.exe"; DestDir: "{app}"; DestName: "kryptic.exe"; Flags: ignoreversion
-#          Source: "dist\kryptic-tray_windows_amd64.exe"; DestDir: "{app}"; DestName: "kryptic-tray.exe"; Flags: ignoreversion
-#
-#          [Registry]
-#          Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Check: NeedsAddPath(ExpandConstant('{app}'))
-#
-#          [Icons]
-#          Name: "{autoprograms}\Kryptic"; Filename: "{app}\kryptic-tray.exe"
-#
-#          [Run]
-#          Filename: "{app}\kryptic-tray.exe"; Description: "Start Kryptic"; Flags: nowait postinstall skipifsilent
-#
-#          [Code]
-#          function NeedsAddPath(Param: string): Boolean;
-#          var
-#            Paths: string;
-#          begin
-#            if not RegQueryStringValue(HKEY_LOCAL_MACHINE,
-#              'SYSTEM\CurrentControlSet\Control\Session Manager\Environment',
-#              'Path', Paths) then
-#              Paths := '';
-#            Result := Pos(';' + Uppercase(Param) + ';',
-#              ';' + Uppercase(Paths) + ';') = 0;
-#          end;
-#          "@
-#
-#          # Remove indentation introduced by the YAML block.
-#          $iss = ($iss -split "`r?`n" | ForEach-Object { $_ -replace '^\s{10}', '' }) -join "`r`n"
-#          Set-Content -Path installer.iss -Value $iss -Encoding UTF8
-#
-#      - name: Build Windows installer
-#        shell: pwsh
-#        run: |
-#          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer.iss
-#          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-#
-#      - name: Sign Windows installer with Azure Artifact Signing
-#        uses: azure/artifact-signing-action@v2
-#        with:
-#          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-#          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-#          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-#          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
-#          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT_NAME }}
-#          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE }}
-#          files-folder: ${{ github.workspace }}\release
-#          files-folder-filter: exe
-#          file-digest: SHA256
-#          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-#          timestamp-digest: SHA256
-#          description: Kryptic
-#          description-url: https://kryptic.dev
-#
-#      - name: Verify Authenticode signatures
-#        shell: pwsh
-#        run: |
-#          $files = @(
-#            "dist\kryptic_windows_amd64.exe",
-#            "dist\kryptic-tray_windows_amd64.exe"
-#          ) + @(Get-ChildItem release\*.exe | ForEach-Object { $_.FullName })
-#
-#          foreach ($file in $files) {
-#            $sig = Get-AuthenticodeSignature $file
-#            Write-Host "$file => $($sig.Status) / $($sig.SignerCertificate.Subject)"
-#            if ($sig.Status -ne "Valid") {
-#              throw "Invalid Authenticode signature: $file ($($sig.Status))"
-#            }
-#          }
-#
-#      - name: Prepare release artifacts
-#        shell: pwsh
-#        run: |
-#          Copy-Item dist\kryptic_windows_amd64.exe release\
-#          Copy-Item dist\kryptic-tray_windows_amd64.exe release\
-#
-#      - name: Upload Windows release artifacts
-#        uses: actions/upload-artifact@v7
-#        with:
-#          name: release-windows-amd64
-#          path: release/*
-#          if-no-files-found: error
-#          retention-days: 7
+  windows:
+    name: Windows amd64
+    needs: validate
+    runs-on: windows-2025
+    environment: release-signing
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build Windows executables
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+
+          $env:CGO_ENABLED = "0"
+          $env:GOOS = "windows"
+          $env:GOARCH = "amd64"
+          $versionFlag = "-X github.com/dev-kryptic/daemon/internal/server.Version=$env:VERSION"
+
+          go build -trimpath -ldflags $versionFlag -o dist/kryptic_windows_amd64.exe ./cmd/kryptic
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          go build -trimpath -ldflags "-H windowsgui $versionFlag" -o dist/kryptic-tray_windows_amd64.exe ./cmd/kryptic-tray
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Sign Windows executables with Azure Artifact Signing
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE }}
+          files: |
+            ${{ github.workspace }}\dist\kryptic_windows_amd64.exe
+            ${{ github.workspace }}\dist\kryptic-tray_windows_amd64.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: Kryptic
+          description-url: https://kryptic.dev
+          exclude-environment-credential: true
+          exclude-workload-identity-credential: true
+          exclude-managed-identity-credential: true
+          exclude-shared-token-cache-credential: true
+          exclude-visual-studio-credential: true
+          exclude-visual-studio-code-credential: true
+          exclude-azure-cli-credential: false
+          exclude-azure-powershell-credential: true
+          exclude-azure-developer-cli-credential: true
+          exclude-interactive-browser-credential: true
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Generate Inno Setup definition
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          PUBLISHER: ${{ vars.COMPANY_NAME }}
+          COMPANY_URL: ${{ vars.COMPANY_URL }}
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+
+          $iss = @"
+          [Setup]
+          AppId={{8F594D7B-7F43-4A1E-9A1C-BA257604DB11}
+          AppName=Kryptic
+          AppVersion=$env:VERSION
+          AppVerName=Kryptic $env:VERSION
+          AppPublisher=$env:PUBLISHER
+          AppPublisherURL=$env:COMPANY_URL
+          AppSupportURL=https://kryptic.dev
+          AppUpdatesURL=https://kryptic.dev
+          DefaultDirName={autopf}\Kryptic
+          DefaultGroupName=Kryptic
+          UninstallDisplayIcon={app}\kryptic-tray.exe
+          OutputDir=release
+          OutputBaseFilename=Kryptic-Setup-$env:VERSION-windows-amd64
+          Compression=lzma2
+          SolidCompression=yes
+          ArchitecturesAllowed=x64compatible
+          ArchitecturesInstallIn64BitMode=x64compatible
+          ChangesEnvironment=yes
+          PrivilegesRequired=admin
+          WizardStyle=modern
+          VersionInfoVersion=$env:VERSION
+          VersionInfoCompany=$env:PUBLISHER
+          VersionInfoDescription=Kryptic Installer
+          VersionInfoProductName=Kryptic
+          VersionInfoProductVersion=$env:VERSION
+
+          [Files]
+          Source: "dist\kryptic_windows_amd64.exe"; DestDir: "{app}"; DestName: "kryptic.exe"; Flags: ignoreversion
+          Source: "dist\kryptic-tray_windows_amd64.exe"; DestDir: "{app}"; DestName: "kryptic-tray.exe"; Flags: ignoreversion
+
+          [Registry]
+          Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Check: NeedsAddPath(ExpandConstant('{app}'))
+
+          [Icons]
+          Name: "{autoprograms}\Kryptic"; Filename: "{app}\kryptic-tray.exe"
+
+          [Run]
+          Filename: "{app}\kryptic-tray.exe"; Description: "Start Kryptic"; Flags: nowait postinstall skipifsilent
+
+          [Code]
+          function NeedsAddPath(Param: string): Boolean;
+          var
+            Paths: string;
+          begin
+            if not RegQueryStringValue(HKEY_LOCAL_MACHINE,
+              'SYSTEM\CurrentControlSet\Control\Session Manager\Environment',
+              'Path', Paths) then
+              Paths := '';
+            Result := Pos(';' + Uppercase(Param) + ';',
+              ';' + Uppercase(Paths) + ';') = 0;
+          end;
+          "@
+
+          # Remove indentation introduced by the YAML block.
+          $iss = ($iss -split "`r?`n" | ForEach-Object { $_ -replace '^\s{10}', '' }) -join "`r`n"
+          Set-Content -Path installer.iss -Value $iss -Encoding UTF8
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Sign Windows installer with Azure Artifact Signing
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE }}
+          files-folder: ${{ github.workspace }}\release
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: Kryptic
+          description-url: https://kryptic.dev
+          exclude-environment-credential: true
+          exclude-workload-identity-credential: true
+          exclude-managed-identity-credential: true
+          exclude-shared-token-cache-credential: true
+          exclude-visual-studio-credential: true
+          exclude-visual-studio-code-credential: true
+          exclude-azure-cli-credential: false
+          exclude-azure-powershell-credential: true
+          exclude-azure-developer-cli-credential: true
+          exclude-interactive-browser-credential: true
+
+      - name: Verify Authenticode signatures
+        shell: pwsh
+        run: |
+          $files = @(
+            "dist\kryptic_windows_amd64.exe",
+            "dist\kryptic-tray_windows_amd64.exe"
+          ) + @(Get-ChildItem release\*.exe | ForEach-Object { $_.FullName })
+
+          foreach ($file in $files) {
+            $sig = Get-AuthenticodeSignature $file
+            Write-Host "$file => $($sig.Status) / $($sig.SignerCertificate.Subject)"
+            if ($sig.Status -ne "Valid") {
+              throw "Invalid Authenticode signature: $file ($($sig.Status))"
+            }
+          }
+
+      - name: Prepare release artifacts
+        shell: pwsh
+        run: |
+          Copy-Item dist\kryptic_windows_amd64.exe release\
+          Copy-Item dist\kryptic-tray_windows_amd64.exe release\
+
+      - name: Upload Windows release artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-windows-amd64
+          path: release/*
+          if-no-files-found: error
+          retention-days: 7
 
   linux:
     name: Linux ${{ matrix.goarch }}
