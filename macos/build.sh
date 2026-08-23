@@ -19,7 +19,13 @@ echo "Generating icons…"
 swift "$ROOT/Scripts/GenerateIcons.swift" "$RESOURCES"
 
 echo "Building Go daemon…"
-(cd "$ROOT/.." && go build -o "$ROOT/.build/kryptic" ./cmd/kryptic)
+# Release builds pass VERSION so the bundled CLI reports the tagged version.
+# Local builds keep the default baked into internal/server.
+GO_LDFLAGS=""
+if [[ -n "${VERSION:-}" ]]; then
+  GO_LDFLAGS="-X github.com/dev-kryptic/daemon/internal/server.Version=$VERSION"
+fi
+(cd "$ROOT/.." && go build -trimpath -ldflags "$GO_LDFLAGS" -o "$ROOT/.build/kryptic" ./cmd/kryptic)
 
 echo "Building Kryptic daemon ($CONFIGURATION, macOS 13+)…"
 cd "$ROOT"

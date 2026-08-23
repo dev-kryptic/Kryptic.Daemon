@@ -28,8 +28,12 @@ import (
 const (
 	protocolVersion = 1
 	cacheTTL        = 5 * time.Minute
-	Version         = "0.1.0"
 )
+
+// Version is the daemon version reported to the platform and compared by
+// `kryptic update`. Release builds override it with:
+// -ldflags "-X github.com/dev-kryptic/daemon/internal/server.Version=x.y.z"
+var Version = "0.1.0"
 
 // secretPair is what the local protocol serves to SDKs: already decrypted.
 type secretPair struct {
