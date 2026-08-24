@@ -3,6 +3,7 @@
 package login
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -23,6 +24,15 @@ import (
 // or expiry. The private key is stored with the session - it is what lets this
 // device open the org-key grant an admin seals to it.
 func Run(client *api.Client, notify func(userCode, verificationURL string)) (*api.Me, error) {
+	return RunContext(context.Background(), client, notify)
+}
+
+// RunContext is Run with cancellation (the tray Cancel Sign-In action).
+func RunContext(ctx context.Context, client *api.Client, notify func(userCode, verificationURL string)) (*api.Me, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	keyPair, err := sealedbox.GenerateKeyPair()
 	if err != nil {
 		return nil, err
@@ -35,6 +45,9 @@ func Run(client *api.Client, notify func(userCode, verificationURL string)) (*ap
 	if err != nil {
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	if notify != nil {
 		notify(start.UserCode, start.VerificationUrl)
@@ -42,15 +55,29 @@ func Run(client *api.Client, notify func(userCode, verificationURL string)) (*ap
 	OpenBrowser(start.VerificationUrl)
 
 	deadline := time.Now().Add(time.Duration(start.ExpiresInSeconds) * time.Second)
-	for time.Now().Before(deadline) {
-		time.Sleep(time.Duration(start.PollIntervalSeconds) * time.Second)
+	interval := time.Duration(start.PollIntervalSeconds) * time.Second
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if !time.Now().Before(deadline) {
+			return nil, fmt.Errorf("the sign-in code expired - try signing in again")
+		}
+
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
 
 		tokens, err := client.DevicePoll(start.DeviceCode)
 		if err != nil {
 			return nil, err
 		}
 		if tokens == nil {
-			continue // still pending
+			continue
 		}
 
 		session := authstore.Session{
@@ -63,7 +90,6 @@ func Run(client *api.Client, notify func(userCode, verificationURL string)) (*ap
 		}
 		return client.Me(tokens.AccessToken)
 	}
-	return nil, fmt.Errorf("the sign-in code expired - try signing in again")
 }
 
 // Logout revokes the server-side session (best effort) and clears the stored

@@ -5,11 +5,11 @@ import SwiftUI
 enum AboutWindowPresenter {
     private static var window: NSWindow?
 
-    static func show() {
-        if window == nil {
-            let content = NSHostingView(rootView: AboutView())
-            content.frame = NSRect(x: 0, y: 0, width: 380, height: 360)
+    static func show(version: String? = nil) {
+        let content = NSHostingView(rootView: AboutView(version: version))
+        content.frame = NSRect(x: 0, y: 0, width: 380, height: 360)
 
+        if window == nil {
             let panel = NSPanel(
                 contentRect: content.frame,
                 styleMask: [.titled, .closable, .fullSizeContentView],
@@ -19,11 +19,11 @@ enum AboutWindowPresenter {
             panel.title = "About Kryptic"
             panel.titlebarAppearsTransparent = true
             panel.isReleasedWhenClosed = false
-            panel.contentView = content
             panel.center()
             window = panel
         }
 
+        window?.contentView = content
         NSApplication.shared.activate(ignoringOtherApps: true)
         window?.center()
         window?.makeKeyAndOrderFront(nil)

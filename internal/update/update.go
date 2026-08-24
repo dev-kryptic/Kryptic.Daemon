@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-const releasesURL = "https://api.github.com/repos/dev-kryptic/daemon/releases/latest"
+const releasesURL = "https://api.github.com/repos/dev-kryptic/Kryptic.Daemon/releases/latest"
 
 type releaseAsset struct {
 	Name               string `json:"name"`

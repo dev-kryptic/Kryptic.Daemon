@@ -4,8 +4,17 @@ import SwiftUI
 struct AboutView: View {
     @Environment(\.colorScheme) private var colorScheme
 
+    var version: String?
+
     private var logoName: String {
         colorScheme == .dark ? "logo-white" : "logo"
+    }
+
+    private var versionLine: String {
+        if let version, !version.isEmpty {
+            return "Version \(version)"
+        }
+        return "Version unknown"
     }
 
     var body: some View {
@@ -26,13 +35,13 @@ struct AboutView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
-                Text("Version 0.1.0 (preview)")
+                Text(versionLine)
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
 
             Text(
-                "Authenticate once. Every project on this machine works - no prefix commands, no .env files."
+                "Authenticate once. Every project on this machine works. No prefix commands, no .env files."
             )
             .font(.footnote)
             .multilineTextAlignment(.center)

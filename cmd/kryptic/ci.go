@@ -27,7 +27,7 @@ func ci() error {
 Credentials come from the environment:
   KRYPTIC_CLIENT_ID       machine identity client id (kmi_...)
   KRYPTIC_CLIENT_SECRET   the client secret from the management console
-  KRYPTIC_PIPELINES_API   optional API override (self-hosted)`)
+  KRYPTIC_PIPELINES_API   optional API URL override`)
 		return nil
 	}
 	return ciExport()

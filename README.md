@@ -6,6 +6,19 @@ developer's machine and the Kryptic platform: sign in once via the browser, then
 SDK on the machine gets its secrets through a local socket. Secrets live in daemon
 memory only - never on disk.
 
+## Install
+
+Download a signed installer from [kryptic.dev/download](https://kryptic.dev/download).
+That page detects your OS and architecture and serves the current build.
+
+```bash
+# Linux
+curl -fsSL https://kryptic.dev/install.sh | sh
+kryptic login
+```
+
+On macOS and Windows, run the installer from the download page, then `kryptic login`.
+
 ```
 kryptic login                 # browser device flow, refresh token -> OS credential store
 kryptic start                 # run the daemon (launchd/systemd/service manager keeps it alive)
@@ -16,7 +29,7 @@ kryptic secrets list          # projects and environments you can pull
 kryptic secrets get KEY --project proj_x --env development
 kryptic flush                 # clear the daemon's secrets cache
 kryptic scan [PATH|--staged]  # scan for leaked secrets (gitleaks ruleset, local only)
-kryptic update                # self-update from the latest GitHub release
+kryptic update                # replace this binary with the latest published build
 kryptic logout
 ```
 
@@ -37,9 +50,10 @@ kryptic logout
   running as the same user can pull secrets. Bundles are cached in memory for 5
   minutes.
 - **Self-update**: `kryptic update` verifies the downloaded binary against the
-  release `checksums.txt` and only fetches assets over HTTPS from GitHub hosts.
-- **API**: `KRYPTIC_API` points the daemon at a self-hosted platform
-  (default `https://daemon.kryptic.dev`).
+  release `checksums.txt`. Reinstall from [kryptic.dev/download](https://kryptic.dev/download)
+  if you used the macOS package or Windows setup.
+- **API**: talks to `https://daemon.kryptic.dev`. Set `KRYPTIC_API` to override
+  that URL in local development.
 
 ## Build
 
@@ -49,9 +63,10 @@ go build -o kryptic ./cmd/kryptic     # ~8 MB static binary, stdlib only
 
 `build-cross.sh` cross-compiles the CLI for macOS/Linux/Windows and the
 `kryptic-tray` app for Linux and Windows into `dist/`. The tray app is the
-Windows/Linux counterpart of the macOS menu-bar app: same menu (status, sign in/out,
-refresh secrets cache), but it runs the daemon in-process - one binary, no bundling.
-On Windows the daemon serves the named pipe `\\.\pipe\kryptic-daemon`.
+Windows/Linux counterpart of the macOS menu-bar app: the same menu (status,
+sign in/out, cancel sign-in, refresh secrets cache, About, quit), running the
+daemon in-process - one binary, no bundling. On Windows the daemon serves the
+named pipe `\\.\pipe\kryptic-daemon`.
 
 `macos/build.sh` packages the menu-bar app with this binary bundled inside.
 `macos/build.sh --debug` builds it pointed at a local platform (`http://localhost:5211`,

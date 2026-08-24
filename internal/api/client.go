@@ -12,7 +12,7 @@ import (
 )
 
 // DefaultBaseURL points at the hosted Daemon BFF; KRYPTIC_API overrides it
-// (self-hosted deployments, local development).
+// for local development.
 const DefaultBaseURL = "https://daemon.kryptic.dev"
 
 // DefaultPipelinesBaseURL points at the hosted Pipelines BFF (CI/CD);
