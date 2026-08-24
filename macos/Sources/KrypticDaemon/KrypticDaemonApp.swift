@@ -80,6 +80,16 @@ private struct MenuBarContent: View {
             }
             .disabled(!appState.status.running)
 
+            Button(appState.updateTitle) {
+                appState.checkForUpdates()
+            }
+            .disabled(!appState.binaryAvailable)
+
+            Button("Server URL…") {
+                appState.changeServerURL()
+            }
+            .disabled(!appState.binaryAvailable)
+
             Button("About Kryptic…") {
                 AboutWindowPresenter.show(version: AppVersion.display)
             }
@@ -95,9 +105,7 @@ private struct MenuBarContent: View {
 
     @ViewBuilder
     private var statusSection: some View {
-        if let api = DaemonController.apiOverride {
-            Text("API: \(api)")
-        }
+        Text("API: \(appState.status.apiUrl ?? appState.displayAPI)")
         if !appState.binaryAvailable {
             Text("kryptic binary not found")
         } else if !appState.status.running {

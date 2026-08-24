@@ -9,20 +9,21 @@ final class DaemonController {
     private var loginProcess: Process?
 
     /// Where the Go daemon and CLI point. An explicit KRYPTIC_API in the app's
-    /// environment always wins; debug builds default to the local Daemon BFF as run
-    /// from the IDE (port 5237; the docker-compose stack serves it on 5211 instead)
-    /// so login opens the local management client.
-    /// Release builds leave it unset and the Go binary uses the hosted URL.
-    static let apiOverride: String? = {
-        if let explicit = ProcessInfo.processInfo.environment["KRYPTIC_API"] {
+    /// environment always wins; debug builds default to the local Daemon BFF
+    /// unless the user saved a URL. Release builds leave it unset so the Go
+    /// binary reads config.json or the hosted default.
+    static var apiOverride: String? {
+        if let explicit = ProcessInfo.processInfo.environment["KRYPTIC_API"],
+           !explicit.isEmpty {
             return explicit
         }
         #if DEBUG
-        return "http://localhost:5237"
-        #else
-        return nil
+        if ConfigStore.savedAPI == nil {
+            return "http://localhost:5237"
+        }
         #endif
-    }()
+        return nil
+    }
 
     private static func makeProcess(_ binary: URL, _ arguments: [String]) -> Process {
         let process = Process()

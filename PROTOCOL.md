@@ -70,9 +70,13 @@ Success response:
   "authenticated": true,
   "email": "dev@company.com",
   "organization": "Acme",
-  "daemonVersion": "1.0.0"
+  "daemonVersion": "1.0.0",
+  "apiUrl": "https://daemon.kryptic.dev"
 }
 ```
+
+`apiUrl` is the Daemon BFF this process is using. Clients that do not understand
+it must ignore it (forward compatibility).
 
 ### `flush` - drop the daemon's in-memory secrets cache
 

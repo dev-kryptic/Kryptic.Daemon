@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/dev-kryptic/daemon/internal/api"
 	"github.com/dev-kryptic/daemon/internal/authstore"
+	"github.com/dev-kryptic/daemon/internal/config"
 	"github.com/dev-kryptic/daemon/internal/ipc"
 	"github.com/dev-kryptic/daemon/internal/login"
 	"github.com/dev-kryptic/daemon/internal/pidfile"
@@ -37,7 +39,9 @@ func main() {
 	case "stop":
 		err = runStop()
 	case "update":
-		err = update.Run(server.Version)
+		err = runUpdate()
+	case "config":
+		err = runConfig()
 	case "scan":
 		err = runScan()
 	case "login":
@@ -61,6 +65,9 @@ func main() {
 	}
 
 	if err != nil {
+		if errors.Is(err, update.ErrAvailable) {
+			os.Exit(2)
+		}
 		fmt.Fprintln(os.Stderr, "kryptic:", err)
 		os.Exit(1)
 	}
@@ -82,6 +89,11 @@ func usage() {
   kryptic ci export --project proj_x --env production   pipeline secrets, decrypted locally
   kryptic scan [PATH]           scan files for leaked secrets (also: --staged for the git index)
   kryptic update                update kryptic to the latest release
+  kryptic update --check        report whether a newer release exists (exit 2 if so)
+  kryptic update --installer    download the signed installer and open it
+  kryptic config                show the Daemon BFF URL
+  kryptic config set-api URL    save the server URL (signs you out if it changes)
+  kryptic config reset-api      return to https://daemon.kryptic.dev
   kryptic version`)
 }
 
@@ -232,9 +244,11 @@ func whoami(client *api.Client) error {
 // ---------- socket-backed commands ----------
 
 func status() error {
+	apiURL, source := config.API()
 	response, err := ipc.Request(map[string]any{"type": "status"})
 	if err != nil {
 		fmt.Println("daemon: not running")
+		fmt.Printf("api: %s (%s)\n", apiURL, source)
 		return nil
 	}
 	if response["authenticated"] == true {
@@ -243,7 +257,87 @@ func status() error {
 	} else {
 		fmt.Printf("daemon: online (v%v) - not signed in (run `kryptic login`)\n", response["daemonVersion"])
 	}
+	if reported, ok := response["apiUrl"].(string); ok && reported != "" {
+		apiURL = reported
+	}
+	fmt.Printf("api: %s (%s)\n", apiURL, source)
 	return nil
+}
+
+func runConfig() error {
+	args := os.Args[2:]
+	if len(args) == 0 {
+		url, source := config.API()
+		fmt.Printf("api: %s (%s)\n", url, source)
+		if config.EnvOverrides() {
+			fmt.Println("KRYPTIC_API is set and overrides the saved URL.")
+		}
+		return nil
+	}
+	switch args[0] {
+	case "set-api":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: kryptic config set-api URL")
+		}
+		return applyAPIChange(func() error { return config.SetAPI(args[1]) })
+	case "reset-api":
+		return applyAPIChange(config.ResetAPI)
+	default:
+		return fmt.Errorf("usage: kryptic config [set-api URL|reset-api]")
+	}
+}
+
+func applyAPIChange(write func() error) error {
+	previous, _ := config.API()
+	previousClient := api.NewClientFor(previous)
+	if err := write(); err != nil {
+		return err
+	}
+	next, source := config.API()
+	fmt.Printf("api: %s (%s)\n", next, source)
+	if config.EnvOverrides() {
+		fmt.Println("KRYPTIC_API is set and still overrides the saved URL.")
+		return nil
+	}
+	if previous == next {
+		return nil
+	}
+	hadSession := false
+	if _, err := authstore.LoadSession(); err == nil {
+		hadSession = true
+	}
+	_ = login.Logout(previousClient)
+	if hadSession {
+		fmt.Println("signed out of the previous server. Run `kryptic login` against the new one.")
+	} else {
+		fmt.Println("run `kryptic login` against the new server.")
+	}
+	if _, err := ipc.Request(map[string]any{"type": "status"}); err == nil {
+		update.RestartDaemon()
+	}
+	return nil
+}
+
+func runUpdate() error {
+	checkOnly := false
+	useInstaller := false
+	for _, arg := range os.Args[2:] {
+		switch arg {
+		case "--check":
+			checkOnly = true
+		case "--installer":
+			useInstaller = true
+		default:
+			return fmt.Errorf("usage: kryptic update [--check|--installer]")
+		}
+	}
+	if checkOnly {
+		return update.PrintCheck(server.Version)
+	}
+	if useInstaller {
+		return update.RunInstaller(server.Version)
+	}
+	return update.Run(server.Version)
 }
 
 func flush() error {
@@ -396,4 +490,3 @@ func dotenvLine(key, value string) string {
 	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
 	return key + `="` + escaped + `"`
 }
-

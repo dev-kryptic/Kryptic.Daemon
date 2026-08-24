@@ -9,11 +9,13 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/dev-kryptic/daemon/internal/config"
 )
 
-// DefaultBaseURL points at the hosted Daemon BFF; KRYPTIC_API overrides it
-// for local development.
-const DefaultBaseURL = "https://daemon.kryptic.dev"
+// DefaultBaseURL points at the hosted Daemon BFF. Resolution order is
+// KRYPTIC_API, then the saved config file, then this default.
+const DefaultBaseURL = config.DefaultAPI
 
 // DefaultPipelinesBaseURL points at the hosted Pipelines BFF (CI/CD);
 // KRYPTIC_PIPELINES_API overrides it.
@@ -25,11 +27,13 @@ type Client struct {
 }
 
 func NewClient() *Client {
-	base := os.Getenv("KRYPTIC_API")
-	if base == "" {
-		base = DefaultBaseURL
-	}
-	return &Client{BaseURL: base, HTTP: &http.Client{Timeout: 15 * time.Second}}
+	base, _ := config.API()
+	return NewClientFor(base)
+}
+
+// NewClientFor points at an explicit Daemon BFF, ignoring config and env.
+func NewClientFor(baseURL string) *Client {
+	return &Client{BaseURL: baseURL, HTTP: &http.Client{Timeout: 15 * time.Second}}
 }
 
 // NewPipelinesClient targets the Pipelines BFF, which speaks machine tokens

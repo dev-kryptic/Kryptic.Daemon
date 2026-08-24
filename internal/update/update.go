@@ -17,7 +17,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/dev-kryptic/daemon/internal/pidfile"
 )
@@ -37,38 +36,25 @@ type release struct {
 // Run updates the current executable to the latest release. currentVersion is
 // compared against the release tag so an up-to-date install is a no-op.
 func Run(currentVersion string) error {
-	httpClient := &http.Client{Timeout: 60 * time.Second}
+	httpClient := githubClient()
 
-	latest, err := fetchLatest(httpClient)
+	result, err := Check(currentVersion)
 	if err != nil {
 		return err
 	}
-
-	latestVersion := strings.TrimPrefix(latest.TagName, "v")
-	if latestVersion == currentVersion {
+	if !result.Newer {
 		fmt.Printf("kryptic %s is already the latest version.\n", currentVersion)
 		return nil
 	}
 
-	assetName := fmt.Sprintf("kryptic_%s_%s", runtime.GOOS, runtime.GOARCH)
-	if runtime.GOOS == "windows" {
-		assetName += ".exe"
-	}
-
-	binaryURL, checksumsURL := "", ""
-	for _, asset := range latest.Assets {
-		switch asset.Name {
-		case assetName:
-			binaryURL = asset.BrowserDownloadURL
-		case "checksums.txt":
-			checksumsURL = asset.BrowserDownloadURL
-		}
-	}
+	assetName := binaryAssetName()
+	binaryURL := result.assetURL(assetName)
+	checksumsURL := result.assetURL("checksums.txt")
 	if binaryURL == "" {
-		return fmt.Errorf("release %s has no binary for %s/%s", latest.TagName, runtime.GOOS, runtime.GOARCH)
+		return fmt.Errorf("release %s has no binary for %s/%s", result.Release.TagName, runtime.GOOS, runtime.GOARCH)
 	}
 	if checksumsURL == "" {
-		return fmt.Errorf("release %s has no checksums.txt - refusing to update unverified", latest.TagName)
+		return fmt.Errorf("release %s has no checksums.txt - refusing to update unverified", result.Release.TagName)
 	}
 
 	// The release metadata is JSON we do not sign, so treat the asset URLs as
@@ -82,7 +68,7 @@ func Run(currentVersion string) error {
 		return err
 	}
 
-	fmt.Printf("updating kryptic %s -> %s…\n", currentVersion, latestVersion)
+	fmt.Printf("updating kryptic %s -> %s…\n", currentVersion, result.Latest)
 
 	binary, err := download(httpClient, binaryURL)
 	if err != nil {
@@ -101,13 +87,28 @@ func Run(currentVersion string) error {
 		return err
 	}
 
-	restartDaemon()
-	fmt.Printf("updated to kryptic %s. Existing sign-in was kept.\n", latestVersion)
+	RestartDaemon()
+	fmt.Printf("updated to kryptic %s. Existing sign-in was kept.\n", result.Latest)
 	return nil
 }
 
+func binaryAssetName() string {
+	name := fmt.Sprintf("kryptic_%s_%s", runtime.GOOS, runtime.GOARCH)
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return name
+}
+
 func fetchLatest(client *http.Client) (*release, error) {
-	response, err := client.Get(releasesURL)
+	request, err := http.NewRequest(http.MethodGet, releasesURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("User-Agent", userAgent())
+	request.Header.Set("Accept", "application/vnd.github+json")
+
+	response, err := client.Do(request)
 	if err != nil {
 		return nil, err
 	}
@@ -144,14 +145,19 @@ func requireGitHubAsset(raw string) error {
 	return nil
 }
 
-func download(client *http.Client, url string) ([]byte, error) {
-	response, err := client.Get(url)
+func download(client *http.Client, rawURL string) ([]byte, error) {
+	request, err := http.NewRequest(http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("User-Agent", userAgent())
+	response, err := client.Do(request)
 	if err != nil {
 		return nil, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("download of %s returned %s", url, response.Status)
+		return nil, fmt.Errorf("download of %s returned %s", rawURL, response.Status)
 	}
 	return io.ReadAll(response.Body)
 }
@@ -208,9 +214,9 @@ func replaceExecutable(binary []byte) error {
 	return nil
 }
 
-// restartDaemon stops the previous process (without logging out) and starts
+// RestartDaemon stops the previous process (without logging out) and starts
 // the newly installed binary. systemd/LaunchAgent are preferred when present.
-func restartDaemon() {
+func RestartDaemon() {
 	_ = pidfile.StopRunning()
 
 	switch runtime.GOOS {
@@ -231,6 +237,18 @@ func restartDaemon() {
 	}
 	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
 		executable = resolved
+	}
+	base := filepath.Base(executable)
+	if strings.Contains(strings.ToLower(base), "tray") {
+		sibling := filepath.Join(filepath.Dir(executable), "kryptic")
+		if runtime.GOOS == "windows" {
+			sibling += ".exe"
+		}
+		if info, err := os.Stat(sibling); err == nil && !info.IsDir() {
+			executable = sibling
+		} else {
+			return
+		}
 	}
 	cmd := exec.Command(executable, "start")
 	cmd.Stdout = nil

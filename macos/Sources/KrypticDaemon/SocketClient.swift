@@ -10,6 +10,7 @@ enum SocketClient {
         var email: String?
         var organization: String?
         var daemonVersion: String?
+        var apiUrl: String?
     }
 
     static var socketPath: String {
@@ -25,7 +26,8 @@ enum SocketClient {
             authenticated: response["authenticated"] as? Bool ?? false,
             email: response["email"] as? String,
             organization: response["organization"] as? String,
-            daemonVersion: response["daemonVersion"] as? String
+            daemonVersion: response["daemonVersion"] as? String,
+            apiUrl: response["apiUrl"] as? String
         )
     }
 

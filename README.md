@@ -30,6 +30,9 @@ kryptic secrets get KEY --project proj_x --env development
 kryptic flush                 # clear the daemon's secrets cache
 kryptic scan [PATH|--staged]  # scan for leaked secrets (gitleaks ruleset, local only)
 kryptic update                # replace this binary with the latest published build
+kryptic update --check        # report whether a newer release exists
+kryptic config                # show the Daemon BFF URL
+kryptic config set-api URL    # point this machine at a different Kryptic server
 kryptic logout
 ```
 
@@ -50,10 +53,14 @@ kryptic logout
   running as the same user can pull secrets. Bundles are cached in memory for 5
   minutes.
 - **Self-update**: `kryptic update` verifies the downloaded binary against the
-  release `checksums.txt`. Reinstall from [kryptic.dev/download](https://kryptic.dev/download)
-  if you used the macOS package or Windows setup.
-- **API**: talks to `https://daemon.kryptic.dev`. Set `KRYPTIC_API` to override
-  that URL in local development.
+  release `checksums.txt`. The menu-bar and tray apps also have **Check for
+  Updates**, which downloads the signed installer (macOS `.pkg`, Windows setup,
+  Linux `.deb` when you installed from a package) and opens it. Reinstall from
+  [kryptic.dev/download](https://kryptic.dev/download) if you prefer.
+- **API**: talks to `https://daemon.kryptic.dev`. Set a different Daemon BFF with
+  `kryptic config set-api URL` (or **Server URL** in the menu). `KRYPTIC_API`
+  overrides the saved value, which is how local development points at a BFF on
+  localhost. Changing the URL signs you out, because tokens belong to one server.
 
 ## Build
 

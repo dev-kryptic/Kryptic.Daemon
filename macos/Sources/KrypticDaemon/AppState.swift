@@ -6,6 +6,8 @@ final class AppState: ObservableObject {
     @Published var loginCode: String?
     @Published var loginInProgress = false
     @Published var loginError: String?
+    @Published var updateTitle = "Check for Updates…"
+    @Published var displayAPI = ConfigStore.displayAPI
 
     let controller = DaemonController()
     private var pollTimer: Timer?
@@ -17,6 +19,15 @@ final class AppState: ObservableObject {
         refresh()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
+        }
+        guard let binary = DaemonController.binaryURL() else { return }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 8) { [weak self] in
+            let result = KrypticProcess.run(binary, ["update", "--check"])
+            Task { @MainActor in
+                if result.status == 2 {
+                    self?.updateTitle = "Update Available…"
+                }
+            }
         }
     }
 
@@ -59,6 +70,31 @@ final class AppState: ObservableObject {
     func refreshSecretsCache() {
         Task.detached {
             _ = SocketClient.flushSecretsCache()
+        }
+    }
+
+    func checkForUpdates() {
+        guard let binary = DaemonController.binaryURL() else { return }
+        UpdatePresenter.check(binary: binary, currentVersion: AppVersion.display)
+        updateTitle = "Check for Updates…"
+    }
+
+    func changeServerURL() {
+        guard let next = ServerURLPresenter.request() else { return }
+        controller.logout { [weak self] in
+            do {
+                if next == "https://daemon.kryptic.dev" {
+                    try ConfigStore.resetAPI()
+                } else {
+                    try ConfigStore.setAPI(next)
+                }
+            } catch {
+                return
+            }
+            self?.controller.stopAnyDaemon()
+            self?.controller.ensureDaemonRunning()
+            self?.displayAPI = ConfigStore.displayAPI
+            self?.refresh()
         }
     }
 

@@ -251,20 +251,31 @@ func (s *Server) handleFlush() map[string]any {
 }
 
 func (s *Server) handleStatus() map[string]any {
+	base := map[string]any{
+		"ok": true, "authenticated": false, "daemonVersion": Version,
+		"apiUrl": s.client.BaseURL,
+	}
 	token, err := s.token()
 	if err != nil {
-		return map[string]any{"ok": true, "authenticated": false, "daemonVersion": Version}
+		return base
 	}
 
 	me, err := s.client.Me(token)
 	if err != nil {
-		return map[string]any{"ok": true, "authenticated": false, "daemonVersion": Version}
+		return base
 	}
 
-	return map[string]any{
-		"ok": true, "authenticated": true, "daemonVersion": Version,
-		"email": me.Email, "organization": me.Organization,
-	}
+	base["authenticated"] = true
+	base["email"] = me.Email
+	base["organization"] = me.Organization
+	return base
+}
+
+// SetBaseURL points this process at a different Daemon BFF and drops cached
+// auth so the next request uses the new host.
+func (s *Server) SetBaseURL(baseURL string) {
+	s.ResetAuth()
+	s.client.BaseURL = baseURL
 }
 
 // token returns a live access token, refreshing through the stored (rotating)

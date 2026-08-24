@@ -5,7 +5,7 @@
 // alone; the tray then acts as a remote control for it.
 //
 // The menu is a 1:1 match of the macOS MenuBarExtra: status, sign in/out,
-// cancel sign-in, refresh cache, About, quit.
+// cancel sign-in, refresh cache, Check for Updates, Server URL, About, quit.
 package main
 
 import (
@@ -13,7 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,10 +21,13 @@ import (
 	"fyne.io/systray"
 	"github.com/dev-kryptic/daemon/internal/about"
 	"github.com/dev-kryptic/daemon/internal/api"
+	"github.com/dev-kryptic/daemon/internal/config"
+	"github.com/dev-kryptic/daemon/internal/dialog"
 	"github.com/dev-kryptic/daemon/internal/ipc"
 	"github.com/dev-kryptic/daemon/internal/login"
 	"github.com/dev-kryptic/daemon/internal/pidfile"
 	"github.com/dev-kryptic/daemon/internal/server"
+	"github.com/dev-kryptic/daemon/internal/update"
 )
 
 func main() {
@@ -37,11 +40,7 @@ func onReady() {
 
 	apiItem := systray.AddMenuItem("", "")
 	apiItem.Disable()
-	apiItem.Hide()
-	if override := os.Getenv("KRYPTIC_API"); override != "" {
-		apiItem.SetTitle("API: " + override)
-		apiItem.Show()
-	}
+	showAPI(apiItem, "")
 
 	statusItem := systray.AddMenuItem("Daemon: starting…", "")
 	statusItem.Disable()
@@ -60,6 +59,8 @@ func onReady() {
 	signOutItem.Hide()
 	flushItem := systray.AddMenuItem("Refresh Secrets Cache", "Refetch secrets on the next request")
 	flushItem.Disable()
+	updateItem := systray.AddMenuItem("Check for Updates…", "Install the latest Kryptic release")
+	serverItem := systray.AddMenuItem("Server URL…", "Point the daemon at a different Kryptic server")
 	aboutItem := systray.AddMenuItem("About Kryptic…", "About Kryptic")
 	systray.AddSeparator()
 	quitItem := systray.AddMenuItem("Quit Kryptic", "")
@@ -98,6 +99,9 @@ func onReady() {
 		}
 
 		flushItem.Enable()
+		if apiURL, ok := response["apiUrl"].(string); ok {
+			showAPI(apiItem, apiURL)
+		}
 		switch {
 		case response["authenticated"] == true:
 			statusItem.SetTitle(fmt.Sprintf("Daemon: online - %v", response["email"]))
@@ -192,6 +196,16 @@ func onReady() {
 					_, _ = ipc.Request(map[string]any{"type": "flush"})
 				}()
 
+			case <-updateItem.ClickedCh:
+				go runUpdateFlow(updateItem)
+
+			case <-serverItem.ClickedCh:
+				go func() {
+					changeServerURL(client, ownedServer)
+					showAPI(apiItem, client.BaseURL)
+					refresh()
+				}()
+
 			case <-aboutItem.ClickedCh:
 				about.Show()
 
@@ -204,6 +218,8 @@ func onReady() {
 			}
 		}
 	}()
+
+	go watchForUpdates(updateItem)
 }
 
 // shouldStartInProcess is true when nothing is serving the socket, or when the
@@ -231,4 +247,104 @@ func shouldStartInProcess() bool {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return true
+}
+
+func showAPI(item *systray.MenuItem, reported string) {
+	url := reported
+	if url == "" {
+		url, _ = config.API()
+	}
+	item.SetTitle("API: " + url)
+	item.Show()
+}
+
+func watchForUpdates(item *systray.MenuItem) {
+	time.Sleep(8 * time.Second)
+	for {
+		result, err := update.Check(server.Version)
+		if err == nil && result.Newer {
+			item.SetTitle("Update Available…")
+		}
+		time.Sleep(12 * time.Hour)
+	}
+}
+
+func runUpdateFlow(item *systray.MenuItem) {
+	item.SetTitle("Checking for Updates…")
+	result, err := update.Check(server.Version)
+	item.SetTitle("Check for Updates…")
+	if err != nil {
+		dialog.Info("Kryptic", "Could not check for updates: "+err.Error())
+		return
+	}
+	if !result.Newer {
+		dialog.Info("Kryptic", "Kryptic "+result.Current+" is already the latest version.")
+		return
+	}
+	message := fmt.Sprintf("Version %s is available (you have %s). Update now?", result.Latest, result.Current)
+	if !dialog.Confirm("Kryptic", message) {
+		item.SetTitle("Update Available…")
+		return
+	}
+	item.SetTitle("Updating…")
+	err = update.Apply(server.Version)
+	item.SetTitle("Check for Updates…")
+	if err != nil {
+		dialog.Info("Kryptic", "Update failed: "+err.Error())
+		item.SetTitle("Update Available…")
+		return
+	}
+	if update.PreferInstaller() {
+		dialog.Info("Kryptic", "The installer is open. Finish it to complete the update. Your sign-in is kept.")
+		return
+	}
+	dialog.Info("Kryptic", "Updated to Kryptic "+result.Latest+". Your sign-in was kept.")
+}
+
+func changeServerURL(client *api.Client, owned *server.Server) {
+	if config.EnvOverrides() {
+		dialog.Info("Kryptic", "KRYPTIC_API is set in the environment and overrides the saved URL.")
+		return
+	}
+	current, _ := config.API()
+	value, ok := dialog.Prompt("Kryptic", "Daemon server URL", current)
+	if !ok {
+		return
+	}
+	value = strings.TrimSpace(value)
+	var next string
+	if value == "" {
+		next = config.DefaultAPI
+	} else {
+		normalized, err := config.NormalizeAPI(value)
+		if err != nil {
+			dialog.Info("Kryptic", err.Error())
+			return
+		}
+		next = normalized
+	}
+	if next == current {
+		return
+	}
+	if !dialog.Confirm("Kryptic", "Changing the server signs you out of the current one. Continue?") {
+		return
+	}
+	_ = login.Logout(api.NewClientFor(current))
+	var err error
+	if next == config.DefaultAPI {
+		err = config.ResetAPI()
+	} else {
+		err = config.SetAPI(next)
+	}
+	if err != nil {
+		dialog.Info("Kryptic", err.Error())
+		return
+	}
+	next, _ = config.API()
+	client.BaseURL = next
+	if owned != nil {
+		owned.SetBaseURL(next)
+		return
+	}
+	update.RestartDaemon()
 }
