@@ -87,7 +87,10 @@ func RunInstaller(currentVersion string) error {
 		return err
 	}
 
-	path := filepath.Join(os.TempDir(), assetName)
+	path, err := installerDest(assetName)
+	if err != nil {
+		return err
+	}
 	if err := os.WriteFile(path, payload, 0o755); err != nil {
 		return err
 	}
@@ -97,6 +100,41 @@ func RunInstaller(currentVersion string) error {
 	}
 	fmt.Printf("opened %s. Finish the installer to complete the update. Existing sign-in is kept.\n", assetName)
 	return nil
+}
+
+func installerDest(assetName string) (string, error) {
+	base, err := os.UserCacheDir()
+	if err != nil || base == "" || !dirExists(base) {
+		base = fallbackTempDir()
+	}
+	dir := filepath.Join(base, "Kryptic", "updates")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		dir = fallbackTempDir()
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return "", err
+		}
+	}
+	return filepath.Join(dir, assetName), nil
+}
+
+func fallbackTempDir() string {
+	if runtime.GOOS == "windows" {
+		for _, key := range []string{"LOCALAPPDATA", "TEMP", "TMP"} {
+			if v := os.Getenv(key); v != "" && dirExists(v) {
+				return filepath.Join(v, "Kryptic", "updates")
+			}
+		}
+		return filepath.Join(`C:\Windows\Temp`, "Kryptic", "updates")
+	}
+	if dirExists("/tmp") {
+		return "/tmp"
+	}
+	return "/var/tmp"
+}
+
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 func installerAssetName(goos, goarch, version string) (string, error) {
@@ -124,7 +162,7 @@ func openInstaller(path string) error {
 	case "darwin":
 		return exec.Command("open", path).Start()
 	case "windows":
-		return exec.Command(path).Start()
+		return openWindowsInstaller(path)
 	default:
 		return exec.Command("xdg-open", path).Start()
 	}

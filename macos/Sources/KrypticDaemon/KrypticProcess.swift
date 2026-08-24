@@ -11,6 +11,7 @@ enum KrypticProcess {
         let process = Process()
         process.executableURL = binary
         process.arguments = arguments
+        process.environment = DaemonController.sanitizedEnvironment(api: DaemonController.apiOverride)
         let out = Pipe()
         let err = Pipe()
         process.standardOutput = out

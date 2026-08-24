@@ -14,7 +14,7 @@ fi
 CONSOLE_USER="$(/usr/bin/stat -f %Su /dev/console 2>/dev/null || true)"
 if [[ -n "${CONSOLE_USER}" && "${CONSOLE_USER}" != "root" && -d "${APP}" ]]; then
   CONSOLE_UID="$(/usr/bin/id -u "${CONSOLE_USER}")"
-  /bin/launchctl asuser "${CONSOLE_UID}" /usr/bin/open "${APP}" >/dev/null 2>&1 || true
+  /bin/launchctl asuser "${CONSOLE_UID}" /usr/bin/env -u TMPDIR /usr/bin/open "${APP}" >/dev/null 2>&1 || true
 fi
 
 exit 0

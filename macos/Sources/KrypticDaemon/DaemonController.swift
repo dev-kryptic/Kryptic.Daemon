@@ -29,10 +29,23 @@ final class DaemonController {
         let process = Process()
         process.executableURL = binary
         process.arguments = arguments
-        if let api = apiOverride {
-            process.environment = ProcessInfo.processInfo.environment.merging(["KRYPTIC_API": api]) { _, new in new }
-        }
+        process.environment = sanitizedEnvironment(api: apiOverride)
         return process
+    }
+
+    /// Installer.app sets TMPDIR to a PKInstallSandbox that is deleted when
+    /// setup finishes. If the app was launched from postinstall it can keep
+    /// that stale TMPDIR for the whole session, and `kryptic update` then
+    /// cannot write the new pkg.
+    static func sanitizedEnvironment(api: String?) -> [String: String] {
+        var env = ProcessInfo.processInfo.environment
+        if let tmp = env["TMPDIR"], tmp.contains("PKInstallSandbox") {
+            env.removeValue(forKey: "TMPDIR")
+        }
+        if let api, !api.isEmpty {
+            env["KRYPTIC_API"] = api
+        }
+        return env
     }
 
     /// The Go CLI. Packaged apps carry it next to the app executable; during

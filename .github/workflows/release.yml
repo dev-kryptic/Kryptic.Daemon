@@ -507,7 +507,7 @@ jobs:
           OutputBaseFilename=Kryptic-Setup-$env:VERSION-windows-amd64
           Compression=lzma2
           SolidCompression=yes
-          CloseApplications=force
+          CloseApplications=no
           ArchitecturesAllowed=x64compatible
           ArchitecturesInstallIn64BitMode=x64compatible
           ChangesEnvironment=yes
@@ -537,9 +537,11 @@ jobs:
           var
             ResultCode: Integer;
           begin
-            { Stop the previous install. Do not log the user out; Credential Manager keeps the session. }
-            Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM kryptic-tray.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-            Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM kryptic.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+            { Stop the previous install without /T. The setup exe is often a
+              child of kryptic-tray (Check for Updates); killing the tree would
+              close this installer. Credential Manager keeps the session. }
+            Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM kryptic-tray.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+            Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM kryptic.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
             Result := '';
           end;
 
