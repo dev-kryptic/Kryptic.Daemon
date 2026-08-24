@@ -2,13 +2,7 @@ import AppKit
 import SwiftUI
 
 struct AboutView: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     var version: String?
-
-    private var logoName: String {
-        colorScheme == .dark ? "logo-white" : "logo"
-    }
 
     private var versionLine: String {
         if let version, !version.isEmpty {
@@ -19,7 +13,7 @@ struct AboutView: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            if let logoURL = AppResources.url(forResource: logoName, withExtension: "png"),
+            if let logoURL = AppResources.url(forResource: "logo", withExtension: "png"),
                let logo = NSImage(contentsOf: logoURL) {
                 Image(nsImage: logo)
                     .resizable()
