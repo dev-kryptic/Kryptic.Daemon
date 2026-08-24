@@ -502,6 +502,7 @@ jobs:
           DefaultDirName={autopf}\Kryptic
           DefaultGroupName=Kryptic
           UninstallDisplayIcon={app}\kryptic-tray.exe
+          SetupIconFile=cmd\kryptic-tray\assets\logo.ico
           OutputDir=release
           OutputBaseFilename=Kryptic-Setup-$env:VERSION-windows-amd64
           Compression=lzma2

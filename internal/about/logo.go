@@ -1,8 +1,5 @@
 package about
 
-import _ "embed"
+import "github.com/dev-kryptic/daemon/internal/brand"
 
-// Wordmark used by the About panel (same asset as the macOS About window).
-//
-//go:embed assets/logo.png
-var logoPNG []byte
+var logoPNG = brand.LogoPNG

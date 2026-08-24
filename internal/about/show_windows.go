@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/dev-kryptic/daemon/internal/winui"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
@@ -237,11 +238,14 @@ func show() {
 		logoBMP = bmp
 	}
 
+	small, big := winui.AppIcons()
 	class := wndClassEx{
 		Size:      uint32(unsafe.Sizeof(wndClassEx{})),
 		WndProc:   wndProcCB,
 		Instance:  windows.Handle(instance),
 		Cursor:    windows.Handle(cursor),
+		Icon:      big,
+		IconSm:    small,
 		ClassName: aboutClass,
 		// No class background brush: wmEraseBkgnd paints with the live theme.
 	}
@@ -278,6 +282,7 @@ func show() {
 		darkTitleBar = 1
 	}
 	procDwmSetWindowAttribute.Call(hwnd, dwmwaUseImmersiveDarkMode, uintptr(unsafe.Pointer(&darkTitleBar)), 4)
+	winui.ApplyChrome(windows.Handle(hwnd), activeTheme.dark)
 
 	aboutMu.Lock()
 	aboutHWND = windows.Handle(hwnd)
