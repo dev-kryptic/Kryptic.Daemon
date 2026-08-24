@@ -199,6 +199,7 @@ jobs:
           pkgbuild \
             --component "macos/dist/Kryptic.app" \
             --install-location "/Applications" \
+            --scripts "macos/pkg/scripts" \
             --identifier "${BUNDLE_ID}.pkg" \
             --version "$VERSION" \
             --sign "$INSTALLER_IDENTITY" \
@@ -505,6 +506,7 @@ jobs:
           OutputBaseFilename=Kryptic-Setup-$env:VERSION-windows-amd64
           Compression=lzma2
           SolidCompression=yes
+          CloseApplications=force
           ArchitecturesAllowed=x64compatible
           ArchitecturesInstallIn64BitMode=x64compatible
           ChangesEnvironment=yes
@@ -530,6 +532,16 @@ jobs:
           Filename: "{app}\kryptic-tray.exe"; Description: "Start Kryptic"; Flags: nowait postinstall skipifsilent
 
           [Code]
+          function PrepareToInstall(var NeedsRestart: Boolean): String;
+          var
+            ResultCode: Integer;
+          begin
+            { Stop the previous install. Do not log the user out; Credential Manager keeps the session. }
+            Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM kryptic-tray.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+            Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM kryptic.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+            Result := '';
+          end;
+
           function NeedsAddPath(Param: string): Boolean;
           var
             Paths: string;
@@ -690,11 +702,73 @@ jobs:
            Local daemon and CLI for securely accessing Kryptic-managed secrets.
           EOF
 
+          cat > "$PKGROOT/DEBIAN/preinst" <<'EOF'
+          #!/bin/sh
+          set -e
+          stop_user() {
+            u="$1"
+            uid=$(id -u "$u") || return 0
+            export XDG_RUNTIME_DIR="/run/user/$uid"
+            sudo -u "$u" -E systemctl --user stop kryptic-daemon 2>/dev/null || true
+            pkill -u "$u" -x kryptic-tray 2>/dev/null || true
+            pkill -u "$u" -x kryptic 2>/dev/null || true
+          }
+          if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+            stop_user "$SUDO_USER"
+          fi
+          exit 0
+          EOF
+          chmod 0755 "$PKGROOT/DEBIAN/preinst"
+
+          cat > "$PKGROOT/DEBIAN/postinst" <<'EOF'
+          #!/bin/sh
+          set -e
+          start_user() {
+            u="$1"
+            uid=$(id -u "$u") || return 0
+            export XDG_RUNTIME_DIR="/run/user/$uid"
+            sudo -u "$u" -E systemctl --user daemon-reload 2>/dev/null || true
+            sudo -u "$u" -E systemctl --user enable --now kryptic-daemon 2>/dev/null || true
+          }
+          if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+            start_user "$SUDO_USER"
+          fi
+          exit 0
+          EOF
+          chmod 0755 "$PKGROOT/DEBIAN/postinst"
+
           dpkg-deb --root-owner-group --build "$PKGROOT" \
             "release/kryptic_${VERSION}_${DEBARCH}.deb"
 
           cp "dist/kryptic_linux_${GOARCH}" release/
           cp "dist/kryptic-tray_linux_${GOARCH}" release/
+
+      - name: Import Linux release signing key
+        shell: bash
+        env:
+          GPG_PRIVATE_KEY_B64: ${{ secrets.LINUX_GPG_PRIVATE_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          echo "$GPG_PRIVATE_KEY_B64" | base64 --decode > "$RUNNER_TEMP/kryptic-release-signing.asc"
+          gpg --batch --import "$RUNNER_TEMP/kryptic-release-signing.asc"
+
+      - name: Sign DEB
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          DEBARCH: ${{ matrix.debarch }}
+          GPG_KEY_ID: ${{ secrets.LINUX_GPG_KEY_ID }}
+          GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          DEB="release/kryptic_${VERSION}_${DEBARCH}.deb"
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase "$GPG_PASSPHRASE" \
+            --local-user "$GPG_KEY_ID" \
+            --armor --detach-sign \
+            --output "${DEB}.asc" \
+            "$DEB"
+          gpg --verify "${DEB}.asc" "$DEB"
 
       - name: Upload Linux release artifacts
         uses: actions/upload-artifact@v7

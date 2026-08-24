@@ -17,6 +17,11 @@ if (-not (Test-Path $cli)) {
 $installDir = Join-Path $env:LOCALAPPDATA "Kryptic"
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 
+# Stop a previous install so the new files can replace it. Credential Manager
+# keeps the session; the user does not have to sign in again.
+Get-Process kryptic-tray, kryptic -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep -Seconds 1
+
 Copy-Item $cli  (Join-Path $installDir "kryptic.exe")  -Force
 if (Test-Path $tray) {
     Copy-Item $tray (Join-Path $installDir "kryptic-tray.exe") -Force
@@ -40,4 +45,4 @@ if (Test-Path (Join-Path $installDir "kryptic-tray.exe")) {
 }
 
 Write-Host ""
-Write-Host "Done. Next: kryptic login"
+Write-Host "Done. Existing sign-in is kept. If this is a first install, run: kryptic login"

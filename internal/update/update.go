@@ -13,10 +13,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/dev-kryptic/daemon/internal/pidfile"
 )
 
 const releasesURL = "https://api.github.com/repos/dev-kryptic/Kryptic.Daemon/releases/latest"
@@ -98,7 +101,8 @@ func Run(currentVersion string) error {
 		return err
 	}
 
-	fmt.Printf("updated to kryptic %s. Restart the daemon (`kryptic stop && kryptic start`) to run it.\n", latestVersion)
+	restartDaemon()
+	fmt.Printf("updated to kryptic %s. Existing sign-in was kept.\n", latestVersion)
 	return nil
 }
 
@@ -202,4 +206,34 @@ func replaceExecutable(binary []byte) error {
 	}
 	_ = os.Remove(old) // fails on Windows while the old binary runs; harmless leftover
 	return nil
+}
+
+// restartDaemon stops the previous process (without logging out) and starts
+// the newly installed binary. systemd/LaunchAgent are preferred when present.
+func restartDaemon() {
+	_ = pidfile.StopRunning()
+
+	switch runtime.GOOS {
+	case "linux":
+		if err := exec.Command("systemctl", "--user", "restart", "kryptic-daemon").Run(); err == nil {
+			return
+		}
+	case "darwin":
+		spec := fmt.Sprintf("gui/%d/dev.kryptic.daemon", os.Getuid())
+		if err := exec.Command("launchctl", "kickstart", "-k", spec).Run(); err == nil {
+			return
+		}
+	}
+
+	executable, err := os.Executable()
+	if err != nil {
+		return
+	}
+	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
+		executable = resolved
+	}
+	cmd := exec.Command(executable, "start")
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	_ = cmd.Start()
 }

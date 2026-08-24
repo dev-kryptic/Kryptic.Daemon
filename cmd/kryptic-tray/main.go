@@ -23,6 +23,7 @@ import (
 	"github.com/dev-kryptic/daemon/internal/api"
 	"github.com/dev-kryptic/daemon/internal/ipc"
 	"github.com/dev-kryptic/daemon/internal/login"
+	"github.com/dev-kryptic/daemon/internal/pidfile"
 	"github.com/dev-kryptic/daemon/internal/server"
 )
 
@@ -66,7 +67,11 @@ func onReady() {
 	client := api.NewClient()
 
 	var ownedServer *server.Server
-	if _, err := ipc.Request(map[string]any{"type": "status"}); err != nil {
+	var wrotePidfile bool
+	if shouldStartInProcess() {
+		if err := pidfile.Write(); err == nil {
+			wrotePidfile = true
+		}
 		ownedServer = server.New(client)
 		go func() {
 			if err := ownedServer.Run(); err != nil {
@@ -191,9 +196,39 @@ func onReady() {
 				about.Show()
 
 			case <-quitItem.ClickedCh:
+				if wrotePidfile {
+					pidfile.Remove()
+				}
 				systray.Quit()
 				return
 			}
 		}
 	}()
+}
+
+// shouldStartInProcess is true when nothing is serving the socket, or when the
+// process that is serving it is an older install. Stopping that process does
+// not clear the login session.
+func shouldStartInProcess() bool {
+	response, err := ipc.Request(map[string]any{"type": "status"})
+	if err != nil {
+		return true
+	}
+	running, _ := response["daemonVersion"].(string)
+	if running == server.Version {
+		return false
+	}
+	log.Printf("replacing daemon %s with %s (session kept)", running, server.Version)
+	if err := pidfile.StopRunning(); err != nil {
+		log.Printf("could not stop previous daemon: %v", err)
+		return false
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := ipc.Request(map[string]any{"type": "status"}); err != nil {
+			return true
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return true
 }

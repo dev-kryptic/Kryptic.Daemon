@@ -12,6 +12,8 @@ if [[ ! -f "$BINARY" ]]; then
 fi
 
 echo "Installing kryptic to ~/.local/bin…"
+systemctl --user stop kryptic-daemon 2>/dev/null || true
+pkill -x kryptic-tray 2>/dev/null || true
 install -Dm755 "$BINARY" "$HOME/.local/bin/kryptic"
 
 if ! command -v systemctl >/dev/null 2>&1; then
@@ -27,4 +29,4 @@ systemctl --user enable --now kryptic-daemon
 echo
 echo "Done. The daemon starts at login and is running now."
 echo "Tip: install 'secret-tool' (libsecret) so the session token lives in your keyring."
-echo "Next: kryptic login"
+echo "Existing sign-in is kept. If this is a first install, run: kryptic login"

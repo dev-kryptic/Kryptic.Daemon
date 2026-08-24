@@ -1,0 +1,23 @@
+#!/bin/bash
+# Stop a previous Kryptic install so this package can replace the app and CLI.
+# The Keychain session is left alone; the user stays signed in.
+set -euo pipefail
+
+CONSOLE_USER="$(/usr/bin/stat -f %Su /dev/console 2>/dev/null || true)"
+if [[ -z "${CONSOLE_USER}" || "${CONSOLE_USER}" == "root" ]]; then
+  CONSOLE_USER="${USER:-}"
+fi
+
+if [[ -n "${CONSOLE_USER}" && "${CONSOLE_USER}" != "root" ]]; then
+  CONSOLE_UID="$(/usr/bin/id -u "${CONSOLE_USER}")"
+
+  /bin/launchctl asuser "${CONSOLE_UID}" /usr/bin/osascript -e 'tell application id "dev.kryptic.daemon" to quit' >/dev/null 2>&1 || true
+  sleep 1
+
+  /usr/bin/killall -u "${CONSOLE_USER}" KrypticDaemon >/dev/null 2>&1 || true
+  /usr/bin/killall -u "${CONSOLE_USER}" kryptic >/dev/null 2>&1 || true
+
+  /bin/launchctl bootout "gui/${CONSOLE_UID}/dev.kryptic.daemon" >/dev/null 2>&1 || true
+fi
+
+exit 0

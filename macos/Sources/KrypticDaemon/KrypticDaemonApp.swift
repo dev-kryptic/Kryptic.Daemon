@@ -81,7 +81,7 @@ private struct MenuBarContent: View {
             .disabled(!appState.status.running)
 
             Button("About Kryptic…") {
-                AboutWindowPresenter.show(version: appState.status.daemonVersion)
+                AboutWindowPresenter.show(version: AppVersion.display)
             }
 
             Divider()
