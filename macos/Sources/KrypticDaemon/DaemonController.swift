@@ -12,7 +12,7 @@ final class DaemonController {
     /// environment always wins; debug builds default to the local Daemon BFF
     /// unless the user saved a URL. Release builds leave it unset so the Go
     /// binary reads config.json or the hosted default.
-    static var apiOverride: String? {
+    nonisolated static var apiOverride: String? {
         if let explicit = ProcessInfo.processInfo.environment["KRYPTIC_API"],
            !explicit.isEmpty {
             return explicit
@@ -37,7 +37,7 @@ final class DaemonController {
     /// setup finishes. If the app was launched from postinstall it can keep
     /// that stale TMPDIR for the whole session, and `kryptic update` then
     /// cannot write the new pkg.
-    static func sanitizedEnvironment(api: String?) -> [String: String] {
+    nonisolated static func sanitizedEnvironment(api: String?) -> [String: String] {
         var env = ProcessInfo.processInfo.environment
         if let tmp = env["TMPDIR"], tmp.contains("PKInstallSandbox") {
             env.removeValue(forKey: "TMPDIR")
