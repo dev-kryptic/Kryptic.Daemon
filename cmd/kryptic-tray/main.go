@@ -105,7 +105,12 @@ func onReady() {
 		}
 		switch {
 		case response["authenticated"] == true:
-			statusItem.SetTitle(fmt.Sprintf("Daemon: online - %v", response["email"]))
+			granted, hasGrantField := response["orgKeyGranted"].(bool)
+			if hasGrantField && !granted {
+				statusItem.SetTitle("Daemon: online - waiting for organization key")
+			} else {
+				statusItem.SetTitle(fmt.Sprintf("Daemon: online - %v", response["email"]))
+			}
 			if org, ok := response["organization"].(string); ok && org != "" {
 				orgItem.SetTitle(org)
 				orgItem.Show()

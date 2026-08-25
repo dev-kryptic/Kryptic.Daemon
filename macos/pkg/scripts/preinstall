@@ -20,4 +20,9 @@ if [[ -n "${CONSOLE_USER}" && "${CONSOLE_USER}" != "root" ]]; then
   /bin/launchctl bootout "gui/${CONSOLE_UID}/dev.kryptic.daemon" >/dev/null 2>&1 || true
 fi
 
+# A leftover `sudo kryptic start` owns /tmp/kryptic-daemon.sock as root, which
+# the user-level app cannot connect to (it then sits on "Daemon: starting…").
+/usr/bin/killall -u root kryptic >/dev/null 2>&1 || true
+/bin/rm -f /tmp/kryptic-daemon.sock
+
 exit 0

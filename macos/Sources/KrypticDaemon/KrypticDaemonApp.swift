@@ -109,9 +109,17 @@ private struct MenuBarContent: View {
         if !appState.binaryAvailable {
             Text("kryptic binary not found")
         } else if !appState.status.running {
-            Text("Daemon: starting…")
+            if let error = appState.spawnError {
+                Text("Daemon: failed to start")
+                Text(error)
+            } else {
+                Text("Daemon: starting…")
+            }
         } else if appState.status.authenticated {
             Text("Daemon: online - \(appState.status.email ?? "signed in")")
+            if !appState.status.orgKeyGranted {
+                Text("Waiting for organization-key grant")
+            }
             if let organization = appState.status.organization {
                 Text(organization)
             }

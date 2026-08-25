@@ -11,6 +11,8 @@ enum SocketClient {
         var organization: String?
         var daemonVersion: String?
         var apiUrl: String?
+        /// Missing key from an older daemon is treated as granted.
+        var orgKeyGranted = true
     }
 
     static var socketPath: String {
@@ -27,7 +29,8 @@ enum SocketClient {
             email: response["email"] as? String,
             organization: response["organization"] as? String,
             daemonVersion: response["daemonVersion"] as? String,
-            apiUrl: response["apiUrl"] as? String
+            apiUrl: response["apiUrl"] as? String,
+            orgKeyGranted: response["orgKeyGranted"] as? Bool ?? true
         )
     }
 

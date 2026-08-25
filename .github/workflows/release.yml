@@ -852,17 +852,47 @@ jobs:
 
           gpg --verify release/checksums.txt.asc release/checksums.txt
 
+      - name: Notes from CHANGELOG.md
+        id: notes
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          NOTES_FILE: ${{ runner.temp }}/release-notes.md
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, pathlib, re, sys
+
+          version = os.environ["VERSION"]
+          notes_file = pathlib.Path(os.environ["NOTES_FILE"])
+          lines = pathlib.Path("CHANGELOG.md").read_text().splitlines()
+          pattern = re.compile(rf"^## \[?{re.escape(version)}\]?(?:\s|$)")
+          start = next((i for i, line in enumerate(lines) if pattern.match(line)), None)
+          if start is None:
+              sys.exit(f"CHANGELOG.md has no ## {version} section")
+          end = next(
+              (j for j in range(start + 1, len(lines)) if lines[j].startswith("## ")),
+              len(lines),
+          )
+          body = "\n".join(lines[start:end]).strip() + "\n"
+          notes_file.write_text(body)
+          print(body)
+          PY
+          echo "file=$NOTES_FILE" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.validate.outputs.tag }}
           VERSION: ${{ needs.validate.outputs.version }}
+          NOTES_FILE: ${{ steps.notes.outputs.file }}
         run: |
           set -euo pipefail
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists; uploading/replacing assets."
+            echo "Release $TAG already exists; updating notes and uploading/replacing assets."
+            gh release edit "$TAG" --title "Kryptic $VERSION" --notes-file "$NOTES_FILE"
             for file in release/*; do
               gh release upload "$TAG" "$file" --clobber
             done
@@ -870,6 +900,6 @@ jobs:
             gh release create "$TAG" \
               release/* \
               --title "Kryptic $VERSION" \
-              --generate-notes \
+              --notes-file "$NOTES_FILE" \
               --verify-tag
           fi

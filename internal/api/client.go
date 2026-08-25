@@ -64,6 +64,8 @@ type Me struct {
 	Email        string `json:"email"`
 	DisplayName  string `json:"displayName"`
 	Organization string `json:"organization"`
+	// Pointer so an older BFF that omits the field is not treated as "no grant".
+	HasOrgKeyGrant *bool `json:"hasOrgKeyGrant"`
 }
 
 // BundleEntry is one ciphertext envelope. The daemon decrypts it locally with

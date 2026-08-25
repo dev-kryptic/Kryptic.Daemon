@@ -102,11 +102,20 @@ func usage() {
 // runStart records the pid, handles SIGINT/SIGTERM for a clean exit, and runs
 // the socket server in the foreground.
 func runStart(client *api.Client) error {
+	if err := pidfile.RefuseRoot("start"); err != nil {
+		return err
+	}
+
 	if pid, err := pidfile.Read(); err == nil && pidfile.Alive(pid) && pid != os.Getpid() {
 		return fmt.Errorf("daemon already running (pid %d) - `kryptic stop` first", pid)
+	} else if errors.Is(err, pidfile.ErrUnreadable) {
+		return fmt.Errorf("%w. Try: sudo kryptic stop", err)
 	}
 
 	if err := pidfile.Write(); err != nil {
+		if os.IsPermission(err) {
+			return fmt.Errorf("cannot write pidfile (a daemon may have been started with sudo): %w. Try: sudo kryptic stop", err)
+		}
 		return err
 	}
 	defer pidfile.Remove()
@@ -124,9 +133,14 @@ func runStart(client *api.Client) error {
 
 func runStop() error {
 	pid, err := pidfile.Read()
-	if err != nil {
+	switch {
+	case errors.Is(err, pidfile.ErrNotRunning):
 		fmt.Println("daemon: not running")
 		return nil
+	case errors.Is(err, pidfile.ErrUnreadable):
+		return fmt.Errorf("%w. Try: sudo kryptic stop", err)
+	case err != nil:
+		return err
 	}
 	if !pidfile.Alive(pid) {
 		pidfile.Clear() // crashed daemon left a stale file
@@ -205,7 +219,9 @@ func runLogout(client *api.Client) error {
 	if err := login.Logout(client); err != nil {
 		return err
 	}
-	fmt.Println("Signed out.")
+	fmt.Println("Signed out. This also deleted the device's encryption key:")
+	fmt.Println("after your next `kryptic login`, an admin must re-grant the organization")
+	fmt.Println("key to this device under Approvals before secrets can be decrypted.")
 	return nil
 }
 
@@ -238,6 +254,9 @@ func whoami(client *api.Client) error {
 		return err
 	}
 	fmt.Printf("%s (%s) - organization: %s\n", me.Email, me.DisplayName, me.Organization)
+	if me.HasOrgKeyGrant != nil && !*me.HasOrgKeyGrant {
+		fmt.Println("organization key: not granted (an admin must approve this device under Approvals)")
+	}
 	return nil
 }
 
@@ -254,6 +273,9 @@ func status() error {
 	if response["authenticated"] == true {
 		fmt.Printf("daemon: online (v%v) - signed in as %v @ %v\n",
 			response["daemonVersion"], response["email"], response["organization"])
+		if granted, ok := response["orgKeyGranted"].(bool); ok && !granted {
+			fmt.Println("organization key: not granted (an admin must approve this device under Approvals)")
+		}
 	} else {
 		fmt.Printf("daemon: online (v%v) - not signed in (run `kryptic login`)\n", response["daemonVersion"])
 	}

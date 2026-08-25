@@ -6,13 +6,17 @@ package pidfile
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 )
 
-var ErrNotRunning = errors.New("daemon is not running (no pidfile)")
+var (
+	ErrNotRunning = errors.New("daemon is not running (no pidfile)")
+	ErrUnreadable = errors.New("pidfile is not readable")
+)
 
 func path() (string, error) {
 	configDir, err := os.UserConfigDir()
@@ -58,6 +62,9 @@ func Read() (int, error) {
 	}
 	data, err := os.ReadFile(p)
 	if err != nil {
+		if os.IsPermission(err) {
+			return 0, fmt.Errorf("%w (started with sudo?): %s", ErrUnreadable, p)
+		}
 		return 0, ErrNotRunning
 	}
 	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))

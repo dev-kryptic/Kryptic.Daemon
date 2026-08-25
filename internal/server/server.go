@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/dev-kryptic/daemon/internal/api"
 	"github.com/dev-kryptic/daemon/internal/authstore"
 	"github.com/dev-kryptic/daemon/internal/ipc"
+	"github.com/dev-kryptic/daemon/internal/notify"
 )
 
 const (
@@ -68,6 +70,8 @@ func (s *Server) Run() error {
 	defer listener.Close()
 
 	log.Printf("kryptic daemon %s listening on %s (api: %s)", Version, ipc.Endpoint(), s.client.BaseURL)
+
+	go s.pollOrgKeyGrant()
 
 	for {
 		connection, err := listener.Accept()
@@ -159,10 +163,13 @@ func (s *Server) handleSecrets(req request) map[string]any {
 				return errorResponse("not_authenticated", "session revoked - run `kryptic login`")
 			case 403:
 				message := "you have no access to this environment"
-				// The platform also 403s when the device has no org-key grant
-				// yet (an admin must approve it) - surface that reason.
 				if apiError.Message != "" {
 					message = apiError.Message
+				}
+				if strings.Contains(strings.ToLower(message), "organization key") {
+					notifyMissingOrgKey()
+				} else {
+					notifyProjectDenied(req.ProjectId, req.Environment, message)
 				}
 				return errorResponse("access_denied", message)
 			case 404:
@@ -253,7 +260,7 @@ func (s *Server) handleFlush() map[string]any {
 func (s *Server) handleStatus() map[string]any {
 	base := map[string]any{
 		"ok": true, "authenticated": false, "daemonVersion": Version,
-		"apiUrl": s.client.BaseURL,
+		"apiUrl": s.client.BaseURL, "orgKeyGranted": true,
 	}
 	token, err := s.token()
 	if err != nil {
@@ -265,10 +272,42 @@ func (s *Server) handleStatus() map[string]any {
 		return base
 	}
 
+	orgKeyGranted := true
+	if me.HasOrgKeyGrant != nil {
+		orgKeyGranted = *me.HasOrgKeyGrant
+	}
+
 	base["authenticated"] = true
 	base["email"] = me.Email
 	base["organization"] = me.Organization
+	base["orgKeyGranted"] = orgKeyGranted
+	if !orgKeyGranted {
+		notifyMissingOrgKey()
+	}
 	return base
+}
+
+// pollOrgKeyGrant keeps the missing-grant OS notification alive even when no SDK
+// or tray is asking for status (for example `kryptic start` with no menu bar).
+func (s *Server) pollOrgKeyGrant() {
+	time.Sleep(2 * time.Second)
+	for {
+		s.handleStatus()
+		time.Sleep(30 * time.Second)
+	}
+}
+
+func notifyMissingOrgKey() {
+	notify.Alert("org-key", "Kryptic is signed in but cannot decrypt",
+		"An admin must grant this device the organization key under Approvals. Until then no project secrets can be injected.")
+}
+
+func notifyProjectDenied(projectId, environment, message string) {
+	label := projectId
+	if environment != "" {
+		label += "/" + environment
+	}
+	notify.Alert("project:"+label, "Kryptic cannot inject secrets", message)
 }
 
 // SetBaseURL points this process at a different Daemon BFF and drops cached

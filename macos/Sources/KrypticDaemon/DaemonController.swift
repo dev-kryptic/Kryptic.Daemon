@@ -93,7 +93,10 @@ final class DaemonController {
 
     /// Starts the bundled daemon. If an older install is still answering the
     /// socket, it is stopped first. The Keychain session is not cleared.
-    func ensureDaemonRunning() {
+    /// `onSpawnFailure` is called if `kryptic start` exits immediately (pidfile
+    /// owned by another user, missing binary, etc.) so the menu can show why
+    /// it is not "starting…".
+    func ensureDaemonRunning(onSpawnFailure: ((String) -> Void)? = nil) {
         guard let binary = Self.binaryURL() else { return }
 
         let status = SocketClient.status()
@@ -108,13 +111,32 @@ final class DaemonController {
         }
 
         let process = Self.makeProcess(binary, ["start"])
+        let errorPipe = Pipe()
         process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        process.standardError = errorPipe
         do {
             try process.run()
             daemonProcess = process
         } catch {
             NSLog("kryptic: failed to start daemon: \(error)")
+            onSpawnFailure?(error.localizedDescription)
+            return
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard let running = self.daemonProcess, running.processIdentifier == process.processIdentifier else { return }
+            guard !running.isRunning else { return }
+            let data = errorPipe.fileHandleForReading.readAvailableDataSafely()
+            var text = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if text.hasPrefix("kryptic: ") {
+                text = String(text.dropFirst("kryptic: ".count))
+            }
+            if text.isEmpty {
+                text = "kryptic start exited (\(running.terminationStatus))"
+            }
+            onSpawnFailure?(text)
         }
     }
 

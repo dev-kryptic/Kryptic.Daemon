@@ -6,6 +6,7 @@ final class AppState: ObservableObject {
     @Published var loginCode: String?
     @Published var loginInProgress = false
     @Published var loginError: String?
+    @Published var spawnError: String?
     @Published var updateTitle = "Check for Updates…"
     @Published var displayAPI = ConfigStore.displayAPI
 
@@ -15,7 +16,6 @@ final class AppState: ObservableObject {
     var binaryAvailable: Bool { DaemonController.binaryURL() != nil }
 
     func start() {
-        controller.ensureDaemonRunning()
         refresh()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
@@ -34,10 +34,15 @@ final class AppState: ObservableObject {
     func refresh() {
         Task.detached {
             let status = SocketClient.status()
-            await MainActor.run { [weak self] in self?.status = status }
+            await MainActor.run { [weak self] in
+                self?.status = status
+                if status.running { self?.spawnError = nil }
+            }
         }
         // If our child died (crash, logout restart race), bring it back.
-        controller.ensureDaemonRunning()
+        controller.ensureDaemonRunning { [weak self] error in
+            self?.spawnError = error
+        }
     }
 
     func login() {
@@ -92,7 +97,9 @@ final class AppState: ObservableObject {
                 return
             }
             self?.controller.stopAnyDaemon()
-            self?.controller.ensureDaemonRunning()
+            self?.controller.ensureDaemonRunning { [weak self] error in
+                self?.spawnError = error
+            }
             self?.displayAPI = ConfigStore.displayAPI
             self?.refresh()
         }

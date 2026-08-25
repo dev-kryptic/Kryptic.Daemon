@@ -71,12 +71,12 @@ Success response:
   "email": "dev@company.com",
   "organization": "Acme",
   "daemonVersion": "1.0.0",
-  "apiUrl": "https://daemon.kryptic.dev"
+  "apiUrl": "https://daemon.kryptic.dev",
+  "orgKeyGranted": true
 }
 ```
 
-`apiUrl` is the Daemon BFF this process is using. Clients that do not understand
-it must ignore it (forward compatibility).
+`apiUrl` is the Daemon BFF this process is using. `orgKeyGranted` is whether an admin has sealed the organization key to this device. Signed in is not enough to decrypt: without this grant every secrets fetch returns `access_denied`. Clients that do not understand these fields must ignore them (forward compatibility). Older daemons omit `orgKeyGranted`; treat a missing field as granted.
 
 ### `flush` - drop the daemon's in-memory secrets cache
 
@@ -100,7 +100,7 @@ so an updated secret is refetched immediately instead of after the 5-minute TTL.
 | `error` | Meaning | Package behavior |
 | --- | --- | --- |
 | `not_authenticated` | Daemon running but no session | warn once, continue without secrets |
-| `access_denied` | User lacks access to the project/environment | warn once, continue |
+| `access_denied` | User lacks project access, or this device has no organization-key grant yet | warn once, continue |
 | `unknown_project` | Project id not found | warn once, continue |
 | `unknown_environment` | Environment slug not found | warn once, continue |
 | `unsupported_version` | Daemon does not speak the requested `v` | warn once, continue |

@@ -1,6 +1,7 @@
 package pidfile
 
 import (
+	"errors"
 	"fmt"
 	"time"
 )
@@ -10,7 +11,10 @@ import (
 func StopRunning() error {
 	pid, err := Read()
 	if err != nil {
-		return nil
+		if errors.Is(err, ErrNotRunning) {
+			return nil
+		}
+		return err
 	}
 	if !Alive(pid) {
 		Clear()
