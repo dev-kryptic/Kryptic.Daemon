@@ -75,8 +75,32 @@ apt-ftparchive \
 # Public key for the signed-by= sources entry.
 gpg --batch --yes --armor --export "$KEY_ID" > kryptic.asc
 
+# GitHub Pages 404s the site root without index.html. Keep this as a
+# landing page so a browser hit is not a "file not found".
+cat > index.html <<EOF
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kryptic apt repository</title>
+</head>
+<body>
+  <h1>Kryptic apt repository</h1>
+  <p>Signed Debian packages for the Kryptic daemon, CLI, and tray. Current version: ${VERSION}.</p>
+  <pre><code>sudo install -d /etc/apt/keyrings
+curl -fsSL https://kryptic.dev/apt/kryptic.asc | sudo tee /etc/apt/keyrings/kryptic.asc >/dev/null
+echo "deb [signed-by=/etc/apt/keyrings/kryptic.asc] https://kryptic.dev/apt stable main" | sudo tee /etc/apt/sources.list.d/kryptic.list
+sudo apt update &amp;&amp; sudo apt install kryptic</code></pre>
+  <p>Until kryptic.dev/apt is live, use this host in the sources line:
+  <code>https://dev-kryptic.github.io/Kryptic.Daemon</code></p>
+</body>
+</html>
+EOF
+
 # GitHub Pages serves this directory; stop Jekyll from mangling paths.
-touch .nojekyll
+# A non-empty file: some deploys drop zero-byte artifacts.
+printf '\n' > .nojekyll
 echo "$VERSION" > VERSION
 
 echo "apt repository written to $OUT"

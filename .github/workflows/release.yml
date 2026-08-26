@@ -846,8 +846,10 @@ jobs:
               --verify-tag
           fi
 
+  # Apt repository publish is paused until the GitHub Pages deploy path is ready.
   apt-repo:
-    name: Publish apt repository
+    name: Build apt repository
+    if: false
     needs:
       - validate
       - release
@@ -856,8 +858,7 @@ jobs:
     environment: release-signing
     permissions:
       contents: read
-      pages: write
-      id-token: write
+      actions: read
 
     steps:
       - name: Checkout
@@ -906,15 +907,31 @@ jobs:
           gpg --verify apt-repo/dists/stable/Release.gpg apt-repo/dists/stable/Release
           gpg --verify apt-repo/dists/stable/InRelease
 
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
           path: apt-repo
 
+  apt-repo-publish:
+    name: Publish apt repository
+    if: false
+    needs:
+      - apt-repo
+
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+
+    steps:
+      # GITHUB_TOKEN cannot create a Pages site (admin API). Enable it once in
+      # Settings → Pages → Build and deployment → Source: GitHub Actions.
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
       - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4

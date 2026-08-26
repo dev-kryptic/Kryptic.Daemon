@@ -12,25 +12,24 @@ Download a signed installer from [kryptic.dev/download](https://kryptic.dev/down
 That page detects your OS and architecture and serves the current build.
 
 ```bash
-# Debian/Ubuntu/elementary: signed apt repository (verified installs + updates)
+# Any Linux (detects arch, verifies checksums, installs the CLI + tray + user service)
+curl -fsSL https://kryptic.dev/install.sh | sh
+kryptic login
+```
+
+Debian and Ubuntu can also install the `.deb` from
+[kryptic.dev/download](https://kryptic.dev/download)
+(`sudo apt install ./kryptic_*.deb`).
+
+<!-- Signed apt repository is paused until the Pages publish flow is ready.
+```bash
 sudo install -d /etc/apt/keyrings
 curl -fsSL https://kryptic.dev/apt/kryptic.asc | sudo tee /etc/apt/keyrings/kryptic.asc >/dev/null
 echo "deb [signed-by=/etc/apt/keyrings/kryptic.asc] https://kryptic.dev/apt stable main" | sudo tee /etc/apt/sources.list.d/kryptic.list
 sudo apt update && sudo apt install kryptic
 kryptic login
 ```
-
-```bash
-# Any Linux (detects arch, verifies checksums, installs the CLI + tray + user service)
-curl -fsSL https://kryptic.dev/install.sh | sh
-kryptic login
-```
-
-The apt repository is signed with the Kryptic release GPG key, so apt
-verifies every install and upgrade. The `.deb` on the download page is the
-same package for manual installs (`sudo apt install ./kryptic_*.deb`);
-opening a downloaded file in a store GUI shows a generic third-party
-warning because the file is local, so prefer the repository.
+-->
 
 On macOS and Windows, run the installer from the download page, then `kryptic login`.
 
@@ -92,10 +91,9 @@ named pipe `\\.\pipe\kryptic-daemon`.
 
 `packaging/linux/build-deb.sh` wraps those Linux binaries in a `.deb` with a
 `.desktop` file, icon, AppStream metainfo, and a systemd user unit.
-`packaging/linux/build-apt-repo.sh` turns the release `.deb` files into the
-GPG-signed apt repository served at `https://kryptic.dev/apt`.
 `packaging/linux/install.sh` does the user-local install into `~/.local`
-without root.
+without root. The apt-repo jobs in `.github/workflows/release.yml` are
+disabled until the GitHub Pages deploy path is ready.
 
 `macos/build.sh` packages the menu-bar app with this binary bundled inside.
 `macos/build.sh --debug` builds it pointed at a local platform (`http://localhost:5211`,

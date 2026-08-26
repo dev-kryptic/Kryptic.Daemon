@@ -5,6 +5,11 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+### Changed
+
+- Apt repository publish is disabled in the signed-release workflow until the
+  GitHub Pages deploy path is ready. Linux installs use `install.sh` or the `.deb`.
+
 ## 0.13.3 - 2026-08-26
 
 Debian and Ubuntu installs now come from a GPG-verified apt repository
