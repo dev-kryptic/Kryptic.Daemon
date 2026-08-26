@@ -9,9 +9,13 @@ import (
 	"strings"
 )
 
-// PreferInstaller is true when this process came from a signed macOS app,
-// Windows setup, or Linux .deb. Those installs should take the pkg/exe/deb
-// rather than replacing a single binary in place.
+// Reporter is called with 0-100 and a short status line while an update runs.
+type Reporter func(percent int, message string)
+
+// PreferInstaller is true when this process came from a signed macOS app or
+// Windows setup. Those installs take the pkg/exe rather than replacing a
+// binary in place. Linux always replaces binaries in place so App Center
+// never opens a downloaded .deb.
 func PreferInstaller() bool {
 	executable, err := os.Executable()
 	if err != nil {
@@ -20,24 +24,33 @@ func PreferInstaller() bool {
 	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
 		executable = resolved
 	}
-	switch runtime.GOOS {
+	return preferInstaller(runtime.GOOS, executable)
+}
+
+func preferInstaller(goos, executable string) bool {
+	switch goos {
 	case "darwin":
 		return strings.Contains(executable, ".app/Contents/MacOS")
 	case "windows":
 		lower := strings.ToLower(executable)
 		return strings.Contains(lower, `\kryptic\`) || strings.HasSuffix(lower, `kryptic-tray.exe`)
 	default:
-		return strings.HasPrefix(executable, "/usr/")
+		return false
 	}
 }
 
-// Apply picks the installer when this looks like a packaged install, otherwise
-// replaces the running binary in place.
+// Apply picks the installer when this looks like a packaged macOS/Windows
+// install, otherwise replaces the running binary in place.
 func Apply(currentVersion string) error {
+	return ApplyWithProgress(currentVersion, nil)
+}
+
+// ApplyWithProgress is Apply with a status callback for UI progress.
+func ApplyWithProgress(currentVersion string, r Reporter) error {
 	if PreferInstaller() {
 		return RunInstaller(currentVersion)
 	}
-	return Run(currentVersion)
+	return run(currentVersion, r)
 }
 
 // RunInstaller downloads the signed platform installer, verifies it against

@@ -17,11 +17,7 @@ curl -fsSL https://kryptic.dev/install.sh | sh
 kryptic login
 ```
 
-Debian and Ubuntu can also install the `.deb` from
-[kryptic.dev/download](https://kryptic.dev/download)
-(`sudo apt install ./kryptic_*.deb`).
-
-<!-- Signed apt repository is paused until the Pages publish flow is ready.
+<!-- .deb and signed apt repository are paused until App Center / Pages are ready.
 ```bash
 sudo install -d /etc/apt/keyrings
 curl -fsSL https://kryptic.dev/apt/kryptic.asc | sudo tee /etc/apt/keyrings/kryptic.asc >/dev/null
@@ -68,8 +64,9 @@ kryptic logout
   minutes.
 - **Self-update**: `kryptic update` verifies the downloaded binary against the
   release `checksums.txt`. The menu-bar and tray apps also have **Check for
-  Updates**, which downloads the signed installer (macOS `.pkg`, Windows setup,
-  Linux `.deb` when you installed from a package) and opens it. Reinstall from
+  Updates**. macOS and Windows download the signed installer and open it.
+  Linux replaces the CLI and tray in place (a password prompt if they live
+  under `/usr`), so App Center is not involved. Reinstall from
   [kryptic.dev/download](https://kryptic.dev/download) if you prefer.
 - **API**: talks to `https://daemon.kryptic.dev`. Set a different Daemon BFF with
   `kryptic config set-api URL` (or **Server URL** in the menu). `KRYPTIC_API`
@@ -90,10 +87,11 @@ daemon in-process - one binary, no bundling. On Windows the daemon serves the
 named pipe `\\.\pipe\kryptic-daemon`.
 
 `packaging/linux/build-deb.sh` wraps those Linux binaries in a `.deb` with a
-`.desktop` file, icon, AppStream metainfo, and a systemd user unit.
+`.desktop` file, icon, AppStream metainfo, and a systemd user unit. The `.deb`
+and apt-repo jobs in `.github/workflows/release.yml` are disabled until the
+Snap Store listing is in App Center and the GitHub Pages deploy path is ready.
 `packaging/linux/install.sh` does the user-local install into `~/.local`
-without root. The apt-repo jobs in `.github/workflows/release.yml` are
-disabled until the GitHub Pages deploy path is ready.
+without root.
 
 `macos/build.sh` packages the menu-bar app with this binary bundled inside.
 `macos/build.sh --debug` builds it pointed at a local platform (`http://localhost:5211`,

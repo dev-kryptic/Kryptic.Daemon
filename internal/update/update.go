@@ -33,11 +33,29 @@ type release struct {
 	Assets  []releaseAsset `json:"assets"`
 }
 
+type updateJob struct {
+	asset string
+	dest  string
+}
+
+type installFile struct {
+	dest string
+	data []byte
+}
+
 // Run updates the current executable to the latest release. currentVersion is
 // compared against the release tag so an up-to-date install is a no-op.
 func Run(currentVersion string) error {
-	httpClient := githubClient()
+	return run(currentVersion, cliReporter())
+}
 
+func run(currentVersion string, r Reporter) error {
+	if r == nil {
+		r = func(int, string) {}
+	}
+	r(0, "Checking for updates…")
+
+	httpClient := githubClient()
 	result, err := Check(currentVersion)
 	if err != nil {
 		return err
@@ -47,57 +65,152 @@ func Run(currentVersion string) error {
 		return nil
 	}
 
-	assetName := binaryAssetName()
-	binaryURL := result.assetURL(assetName)
-	checksumsURL := result.assetURL("checksums.txt")
-	if binaryURL == "" {
-		return fmt.Errorf("release %s has no binary for %s/%s", result.Release.TagName, runtime.GOOS, runtime.GOARCH)
+	jobs, err := updateJobs(runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return err
 	}
+	checksumsURL := result.assetURL("checksums.txt")
 	if checksumsURL == "" {
 		return fmt.Errorf("release %s has no checksums.txt - refusing to update unverified", result.Release.TagName)
-	}
-
-	// The release metadata is JSON we do not sign, so treat the asset URLs as
-	// untrusted: only fetch over HTTPS from GitHub's own hosts. This stops a
-	// tampered release response from redirecting the download to an attacker
-	// origin. (Integrity against the release itself is checked in verify.)
-	if err := requireGitHubAsset(binaryURL); err != nil {
-		return err
 	}
 	if err := requireGitHubAsset(checksumsURL); err != nil {
 		return err
 	}
+	for _, job := range jobs {
+		if result.assetURL(job.asset) == "" {
+			return fmt.Errorf("release %s has no binary %s", result.Release.TagName, job.asset)
+		}
+		if err := requireGitHubAsset(result.assetURL(job.asset)); err != nil {
+			return err
+		}
+	}
 
 	fmt.Printf("updating kryptic %s -> %s…\n", currentVersion, result.Latest)
 
-	binary, err := download(httpClient, binaryURL)
-	if err != nil {
-		return err
-	}
-	checksums, err := download(httpClient, checksumsURL)
+	checksums, err := downloadProgress(httpClient, checksumsURL, 2, 8, r, "Downloading checksums…")
 	if err != nil {
 		return err
 	}
 
-	if err := verify(binary, string(checksums), assetName); err != nil {
+	payloads := make([][]byte, len(jobs))
+	span := 80
+	if n := len(jobs); n > 0 {
+		span = 80 / n
+	}
+	for i, job := range jobs {
+		from := 8 + i*span
+		to := from + span
+		r(from, "Downloading "+job.asset+"…")
+		payload, err := downloadProgress(httpClient, result.assetURL(job.asset), from, to, r, "Downloading update…")
+		if err != nil {
+			return err
+		}
+		if err := verify(payload, string(checksums), job.asset); err != nil {
+			return err
+		}
+		payloads[i] = payload
+	}
+
+	r(90, "Installing…")
+	files := make([]installFile, len(jobs))
+	for i, job := range jobs {
+		files[i] = installFile{dest: job.dest, data: payloads[i]}
+	}
+	if err := installFiles(files); err != nil {
 		return err
 	}
 
-	if err := replaceExecutable(binary); err != nil {
-		return err
-	}
-
+	r(96, "Restarting…")
 	RestartDaemon()
+	r(100, "Updated")
 	fmt.Printf("updated to kryptic %s. Existing sign-in was kept.\n", result.Latest)
 	return nil
 }
 
 func binaryAssetName() string {
-	name := fmt.Sprintf("kryptic_%s_%s", runtime.GOOS, runtime.GOARCH)
-	if runtime.GOOS == "windows" {
+	return cliAssetName(runtime.GOOS, runtime.GOARCH)
+}
+
+func cliAssetName(goos, goarch string) string {
+	name := fmt.Sprintf("kryptic_%s_%s", goos, goarch)
+	if goos == "windows" {
 		name += ".exe"
 	}
 	return name
+}
+
+func trayAssetName(goos, goarch string) string {
+	name := fmt.Sprintf("kryptic-tray_%s_%s", goos, goarch)
+	if goos == "windows" {
+		name += ".exe"
+	}
+	return name
+}
+
+func isTrayExecutable(name string) bool {
+	n := strings.ToLower(filepath.Base(name))
+	n = strings.TrimSuffix(n, ".exe")
+	return strings.Contains(n, "tray")
+}
+
+func updateJobs(goos, goarch string) ([]updateJob, error) {
+	exe, err := currentExecutable()
+	if err != nil {
+		return nil, err
+	}
+	return jobsFor(goos, goarch, exe), nil
+}
+
+func jobsFor(goos, goarch, exe string) []updateJob {
+	dir := filepath.Dir(exe)
+	cliName := cliAssetName(goos, goarch)
+	if goos != "linux" {
+		return []updateJob{{asset: cliName, dest: exe}}
+	}
+	trayName := trayAssetName(goos, goarch)
+	if isTrayExecutable(exe) {
+		jobs := []updateJob{{asset: trayName, dest: exe}}
+		sibling := filepath.Join(dir, "kryptic")
+		if fileExists(sibling) {
+			jobs = append(jobs, updateJob{asset: cliName, dest: sibling})
+		}
+		return jobs
+	}
+	jobs := []updateJob{{asset: cliName, dest: exe}}
+	sibling := filepath.Join(dir, "kryptic-tray")
+	if fileExists(sibling) {
+		jobs = append(jobs, updateJob{asset: trayName, dest: sibling})
+	}
+	return jobs
+}
+
+func currentExecutable() (string, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
+		executable = resolved
+	}
+	return executable, nil
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+func cliReporter() Reporter {
+	fi, err := os.Stderr.Stat()
+	if err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+		return func(int, string) {}
+	}
+	return func(percent int, message string) {
+		fmt.Fprintf(os.Stderr, "\r%s (%d%%)\033[K", message, percent)
+		if percent >= 100 {
+			fmt.Fprintln(os.Stderr)
+		}
+	}
 }
 
 func fetchLatest(client *http.Client) (*release, error) {
@@ -146,6 +259,10 @@ func requireGitHubAsset(raw string) error {
 }
 
 func download(client *http.Client, rawURL string) ([]byte, error) {
+	return downloadProgress(client, rawURL, 0, 0, nil, "")
+}
+
+func downloadProgress(client *http.Client, rawURL string, fromPct, toPct int, r Reporter, message string) ([]byte, error) {
 	request, err := http.NewRequest(http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
@@ -159,7 +276,41 @@ func download(client *http.Client, rawURL string) ([]byte, error) {
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("download of %s returned %s", rawURL, response.Status)
 	}
-	return io.ReadAll(response.Body)
+	if r != nil && message != "" {
+		r(fromPct, message)
+	}
+	total := response.ContentLength
+	var buf []byte
+	if total > 0 {
+		buf = make([]byte, 0, total)
+	}
+	tmp := make([]byte, 32*1024)
+	var copied int64
+	span := toPct - fromPct
+	for {
+		n, readErr := response.Body.Read(tmp)
+		if n > 0 {
+			buf = append(buf, tmp[:n]...)
+			copied += int64(n)
+			if r != nil && total > 0 && span > 0 {
+				pct := fromPct + int(copied*int64(span)/total)
+				if pct > toPct {
+					pct = toPct
+				}
+				r(pct, message)
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return nil, readErr
+		}
+	}
+	if r != nil && toPct > 0 {
+		r(toPct, message)
+	}
+	return buf, nil
 }
 
 // verify checks the downloaded binary against its line in checksums.txt
@@ -183,29 +334,28 @@ func verify(binary []byte, checksums, assetName string) error {
 // replaceExecutable swaps the running binary using the rename dance that works
 // on every OS (a running executable can be renamed, not overwritten).
 func replaceExecutable(binary []byte) error {
-	executable, err := os.Executable()
+	executable, err := currentExecutable()
 	if err != nil {
 		return err
 	}
-	executable, err = filepath.EvalSymlinks(executable)
-	if err != nil {
-		return err
-	}
+	return replaceAt(executable, binary)
+}
 
-	staging := executable + ".new"
+func replaceAt(dest string, binary []byte) error {
+	staging := dest + ".new"
 	if err := os.WriteFile(staging, binary, 0o755); err != nil {
 		return err
 	}
 
-	old := executable + ".old"
+	old := dest + ".old"
 	_ = os.Remove(old) // leftover from a previous update
-	if err := os.Rename(executable, old); err != nil {
+	if err := os.Rename(dest, old); err != nil {
 		_ = os.Remove(staging)
 		return err
 	}
-	if err := os.Rename(staging, executable); err != nil {
+	if err := os.Rename(staging, dest); err != nil {
 		// Put the original back - never leave the user without a binary.
-		if restoreErr := os.Rename(old, executable); restoreErr != nil {
+		if restoreErr := os.Rename(old, dest); restoreErr != nil {
 			return errors.Join(err, restoreErr)
 		}
 		return err
@@ -214,9 +364,51 @@ func replaceExecutable(binary []byte) error {
 	return nil
 }
 
+func installFiles(files []installFile) error {
+	var elevated [][2]string
+	for _, file := range files {
+		if err := replaceAt(file.dest, file.data); err == nil {
+			continue
+		} else if !permissionDenied(err) {
+			return err
+		}
+		dir := filepath.Join(fallbackTempDir(), "Kryptic", "updates")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+		staging := filepath.Join(dir, filepath.Base(file.dest)+".new")
+		if err := os.WriteFile(staging, file.data, 0o755); err != nil {
+			return err
+		}
+		elevated = append(elevated, [2]string{staging, file.dest})
+	}
+	if len(elevated) == 0 {
+		return nil
+	}
+	err := privilegedInstall(elevated)
+	for _, pair := range elevated {
+		_ = os.Remove(pair[0])
+	}
+	return err
+}
+
+func permissionDenied(err error) bool {
+	if err == nil {
+		return false
+	}
+	if os.IsPermission(err) {
+		return true
+	}
+	return errors.Is(err, os.ErrPermission)
+}
+
 // RestartDaemon stops the previous process (without logging out) and starts
 // the newly installed binary. systemd/LaunchAgent are preferred when present.
 func RestartDaemon() {
+	if pid, err := pidfile.Read(); err == nil && pid == os.Getpid() {
+		// In-process tray: do not kill ourselves. The caller re-execs.
+		return
+	}
 	_ = pidfile.StopRunning()
 
 	switch runtime.GOOS {
@@ -231,12 +423,9 @@ func RestartDaemon() {
 		}
 	}
 
-	executable, err := os.Executable()
+	executable, err := currentExecutable()
 	if err != nil {
 		return
-	}
-	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
-		executable = resolved
 	}
 	base := filepath.Base(executable)
 	if strings.Contains(strings.ToLower(base), "tray") {

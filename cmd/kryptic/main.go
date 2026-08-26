@@ -90,7 +90,7 @@ func usage() {
   kryptic scan [PATH]           scan files for leaked secrets (also: --staged for the git index)
   kryptic update                update kryptic to the latest release
   kryptic update --check        report whether a newer release exists (exit 2 if so)
-  kryptic update --installer    download the signed installer and open it
+  kryptic update --installer    download the signed installer and open it (macOS/Windows)
   kryptic config                show the Daemon BFF URL
   kryptic config set-api URL    save the server URL (signs you out if it changes)
   kryptic config reset-api      return to https://daemon.kryptic.dev

@@ -7,6 +7,8 @@ import (
 	"os"
 )
 
+func OpenProgress(string, string) Progress { return nopProgress{} }
+
 func Info(title, message string) {
 	fmt.Fprintf(os.Stderr, "%s: %s\n", title, message)
 }

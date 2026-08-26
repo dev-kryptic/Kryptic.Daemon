@@ -630,9 +630,7 @@ jobs:
       matrix:
         include:
           - goarch: amd64
-            debarch: amd64
           - goarch: arm64
-            debarch: arm64
 
     runs-on: ubuntu-latest
     environment: release-signing
@@ -669,12 +667,23 @@ jobs:
             go build -trimpath -ldflags "$VERSION_FLAG" \
             -o "dist/kryptic-tray_linux_${GOARCH}" ./cmd/kryptic-tray
 
+      - name: Stage Linux binaries
+        shell: bash
+        env:
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          cp "dist/kryptic_linux_${GOARCH}" release/
+          cp "dist/kryptic-tray_linux_${GOARCH}" release/
+
+      # .deb publish is paused until the Snap Store listing is in App Center.
       - name: Build DEB installer
+        if: false
         shell: bash
         env:
           VERSION: ${{ needs.validate.outputs.version }}
           GOARCH: ${{ matrix.goarch }}
-          DEBARCH: ${{ matrix.debarch }}
+          DEBARCH: ${{ matrix.goarch }}
           MAINTAINER: ${{ vars.COMPANY_NAME }}
         run: |
           set -euo pipefail
@@ -685,10 +694,9 @@ jobs:
             --cli "dist/kryptic_linux_${GOARCH}" \
             --tray "dist/kryptic-tray_linux_${GOARCH}" \
             --out "release/kryptic_${VERSION}_${DEBARCH}.deb"
-          cp "dist/kryptic_linux_${GOARCH}" release/
-          cp "dist/kryptic-tray_linux_${GOARCH}" release/
 
       - name: Import Linux release signing key
+        if: false
         shell: bash
         env:
           GPG_PRIVATE_KEY_B64: ${{ secrets.LINUX_GPG_PRIVATE_KEY_BASE64 }}
@@ -698,10 +706,11 @@ jobs:
           gpg --batch --import "$RUNNER_TEMP/kryptic-release-signing.asc"
 
       - name: Sign DEB
+        if: false
         shell: bash
         env:
           VERSION: ${{ needs.validate.outputs.version }}
-          DEBARCH: ${{ matrix.debarch }}
+          DEBARCH: ${{ matrix.goarch }}
           GPG_KEY_ID: ${{ secrets.LINUX_GPG_KEY_ID }}
           GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
         run: |

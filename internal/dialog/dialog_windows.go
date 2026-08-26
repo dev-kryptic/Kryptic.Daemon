@@ -54,6 +54,8 @@ var (
 	active   *dlg
 )
 
+func OpenProgress(string, string) Progress { return nopProgress{} }
+
 func Info(title, message string) {
 	run(kindInfo, title, message, "")
 }

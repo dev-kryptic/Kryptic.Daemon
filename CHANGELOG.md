@@ -5,10 +5,21 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+## 0.13.5 - 2026-08-27
+
+Linux updates replace the installed binaries in place instead of opening a
+`.deb` in App Center.
+
 ### Changed
 
+- Linux **Check for Updates** no longer opens the `.deb` in App Center. The
+  tray and `kryptic update` replace the installed CLI and tray binaries in
+  place, show a progress window, and prompt for permission only when `/usr`
+  is not writable.
+- `.deb` artifacts are not published in the signed-release workflow until the
+  Snap Store listing is in App Center. Linux installs use `install.sh`.
 - Apt repository publish is disabled in the signed-release workflow until the
-  GitHub Pages deploy path is ready. Linux installs use `install.sh` or the `.deb`.
+  GitHub Pages deploy path is ready.
 
 ## 0.13.4 - 2026-08-27
 

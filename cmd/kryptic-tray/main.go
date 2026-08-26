@@ -293,7 +293,20 @@ func runUpdateFlow(item *systray.MenuItem) {
 		return
 	}
 	item.SetTitle("Updating…")
-	err = update.Apply(server.Version)
+	var progress dialog.Progress
+	if !update.PreferInstaller() {
+		progress = dialog.OpenProgress("Kryptic", "Updating…")
+		defer progress.Close()
+	}
+	err = update.ApplyWithProgress(server.Version, func(percent int, message string) {
+		item.SetTitle(fmt.Sprintf("Updating… %d%%", percent))
+		if progress != nil {
+			progress.Set(percent, message)
+		}
+	})
+	if progress != nil {
+		progress.Close()
+	}
 	item.SetTitle("Check for Updates…")
 	if err != nil {
 		dialog.Info("Kryptic", "Update failed: "+err.Error())
@@ -305,6 +318,7 @@ func runUpdateFlow(item *systray.MenuItem) {
 		return
 	}
 	dialog.Info("Kryptic", "Updated to Kryptic "+result.Latest+". Your sign-in was kept.")
+	reexecIfLinux()
 }
 
 func changeServerURL(client *api.Client, owned *server.Server) {

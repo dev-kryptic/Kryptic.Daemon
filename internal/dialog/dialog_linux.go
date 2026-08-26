@@ -3,9 +3,69 @@
 package dialog
 
 import (
+	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 )
+
+func OpenProgress(title, message string) Progress {
+	bin := firstOf("zenity", "qarma", "yad")
+	if bin == "" {
+		return nopProgress{}
+	}
+	cmd := exec.Command(bin,
+		"--progress",
+		"--title="+title,
+		"--text="+message,
+		"--percentage=0",
+		"--auto-close",
+		"--no-cancel",
+		"--width=380",
+	)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nopProgress{}
+	}
+	if err := cmd.Start(); err != nil {
+		_ = stdin.Close()
+		return nopProgress{}
+	}
+	return &zenityProgress{cmd: cmd, w: stdin}
+}
+
+type zenityProgress struct {
+	cmd *exec.Cmd
+	w   io.WriteCloser
+}
+
+func (z *zenityProgress) Set(percent int, message string) {
+	if z == nil || z.w == nil {
+		return
+	}
+	if percent < 0 {
+		percent = 0
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	_, _ = fmt.Fprintf(z.w, "# %s\n%d\n", message, percent)
+}
+
+func (z *zenityProgress) Close() {
+	if z == nil {
+		return
+	}
+	if z.w != nil {
+		_, _ = fmt.Fprint(z.w, "100\n")
+		_ = z.w.Close()
+		z.w = nil
+	}
+	if z.cmd != nil {
+		_ = z.cmd.Wait()
+		z.cmd = nil
+	}
+}
 
 func Info(title, message string) {
 	if runZenity("info", title, message, "") {
