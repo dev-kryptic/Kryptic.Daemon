@@ -2,10 +2,10 @@ import AppKit
 import Foundation
 
 let resources = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
-let svgURL = resources.appendingPathComponent("falcon-black.svg")
+let svgURL = resources.appendingPathComponent("logo.svg")
 
 guard let source = NSImage(contentsOf: svgURL) else {
-    fputs("Failed to load falcon-black.svg\n", stderr)
+    fputs("Failed to load logo.svg\n", stderr)
     exit(1)
 }
 
@@ -20,7 +20,7 @@ func savePNG(_ image: NSImage, size: NSSize, to url: URL) throws {
         operation: .sourceOver,
         fraction: 1,
         respectFlipped: true,
-        hints: nil
+        hints: [.interpolation: NSImageInterpolation.high]
     )
     copy.unlockFocus()
 
@@ -33,7 +33,7 @@ func savePNG(_ image: NSImage, size: NSSize, to url: URL) throws {
 }
 
 do {
-    try savePNG(source, size: NSSize(width: 256, height: 256), to: resources.appendingPathComponent("AppIcon.png"))
+    try savePNG(source, size: NSSize(width: 1024, height: 1024), to: resources.appendingPathComponent("AppIcon.png"))
     print("Generated AppIcon.png")
 } catch {
     fputs("Failed to write AppIcon.png: \(error)\n", stderr)

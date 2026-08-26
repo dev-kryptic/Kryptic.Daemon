@@ -2,8 +2,8 @@ package brand
 
 import _ "embed"
 
-// LogoPNG is the green Kryptic.app icon (black falcon). Used by About, dialogs,
-// and the Windows window/taskbar icon.
+// LogoPNG is the green no-text app icon (black falcon on the brand squircle).
+// Used by About, dialogs, and the Windows window/taskbar icon.
 //
 //go:embed assets/logo.png
 var LogoPNG []byte

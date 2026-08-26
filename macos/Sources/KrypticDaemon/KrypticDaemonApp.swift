@@ -22,13 +22,7 @@ struct KrypticDaemonApp: App {
         MenuBarExtra {
             MenuBarContent(appState: appState)
         } label: {
-            if let icon = MenuBarIcon.image() {
-                Image(nsImage: icon)
-                    .renderingMode(.template)
-                    .frame(width: 18, height: 18)
-            } else {
-                Image(systemName: "key.fill")
-            }
+            MenuBarFalcon()
         }
         .menuBarExtraStyle(.menu)
     }
@@ -41,6 +35,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated {
             AppDelegate.shared?.shutdown()
+        }
+    }
+}
+
+private struct MenuBarFalcon: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        if let icon = MenuBarIcon.image(darkAppearance: colorScheme == .dark) {
+            Image(nsImage: icon)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 18, height: 18)
+        } else {
+            Image(systemName: "key.fill")
         }
     }
 }

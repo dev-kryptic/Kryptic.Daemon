@@ -35,11 +35,8 @@ if [[ "$MAINTAINER" != *"<"* ]]; then
   MAINTAINER="Kryptic <hello@kryptic.dev>"
 fi
 
-ICON="$ROOT/macos/Sources/KrypticDaemon/Resources/logo.png"
-if [[ ! -f "$ICON" ]]; then
-  ICON="$ROOT/cmd/kryptic-tray/assets/kryptic.png"
-fi
-[[ -f "$ICON" ]] || { echo "app icon not found" >&2; exit 1; }
+ICON="$ROOT/macos/Sources/KrypticDaemon/Resources/AppIcon.png"
+[[ -f "$ICON" ]] || { echo "app icon not found: $ICON" >&2; exit 1; }
 
 PKGROOT="$(mktemp -d)"
 trap 'rm -rf "$PKGROOT"' EXIT

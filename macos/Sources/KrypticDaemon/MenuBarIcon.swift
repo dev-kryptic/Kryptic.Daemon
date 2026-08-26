@@ -1,13 +1,14 @@
 import AppKit
 
 enum MenuBarIcon {
-    static func image() -> NSImage? {
-        guard let image = loadSVG(named: "falcon-black") else {
+    static func image(darkAppearance: Bool) -> NSImage? {
+        let name = darkAppearance ? "falcon" : "falcon-black"
+        guard let image = loadSVG(named: name) else {
             return loadPNG(named: "MenuBarIcon")
         }
 
         image.size = NSSize(width: 18, height: 18)
-        image.isTemplate = true
+        image.isTemplate = false
         return image
     }
 

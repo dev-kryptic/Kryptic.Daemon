@@ -3,33 +3,20 @@
 package main
 
 import (
-	_ "embed"
 	"time"
 
 	"fyne.io/systray"
+	"github.com/dev-kryptic/daemon/internal/trayicon"
 	"golang.org/x/sys/windows/registry"
 )
 
-// Windows tray icons must be ICO format. The taskbar never recolors them, so
-// a dark taskbar needs the white falcon and a light taskbar the black one.
-//
-//go:embed assets/kryptic.ico
-var trayIconBlack []byte
-
-//go:embed assets/kryptic-white.ico
-var trayIconWhite []byte
-
 func currentTrayIcon() []byte {
-	if taskbarIsLight() {
-		return trayIconBlack
-	}
-	return trayIconWhite
+	return trayicon.PNGToICO(currentTrayPNG(), trayIconSize)
 }
 
-// taskbarIsLight reads the personalization setting the taskbar follows
-// (SystemUsesLightTheme, not AppsUseLightTheme). A missing value means the
-// legacy always-dark taskbar.
-func taskbarIsLight() bool {
+// taskbarIsLight reads SystemUsesLightTheme (the taskbar setting, not
+// AppsUseLightTheme). A missing value means the legacy always-dark taskbar.
+func panelIsLight() bool {
 	key, err := registry.OpenKey(
 		registry.CURRENT_USER,
 		`Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`,
@@ -43,11 +30,10 @@ func taskbarIsLight() bool {
 	return err == nil && value == 1
 }
 
-// watchTrayTheme swaps the icon when the user flips Windows dark/light mode.
 func watchTrayTheme() {
-	light := taskbarIsLight()
+	light := panelIsLight()
 	for range time.Tick(5 * time.Second) {
-		now := taskbarIsLight()
+		now := panelIsLight()
 		if now != light {
 			light = now
 			systray.SetIcon(currentTrayIcon())

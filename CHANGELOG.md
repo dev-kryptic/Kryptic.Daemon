@@ -10,6 +10,25 @@ matching section into the GitHub Release.
 - Apt repository publish is disabled in the signed-release workflow until the
   GitHub Pages deploy path is ready. Linux installs use `install.sh` or the `.deb`.
 
+## 0.13.4 - 2026-08-27
+
+Linux dark-mode trays show the white falcon, and the daemon app icon is the
+green brand mark instead of a grey silhouette.
+
+### Fixed
+
+- Linux tray follows the desktop color-scheme and shows the white falcon on a
+  dark panel. GNOME and Ubuntu paint tray pixmaps as-is, so the black falcon
+  was invisible on the default dark top bar.
+
+### Changed
+
+- Tray and menu-bar icons are `Falcon.svg` / `Falcon-black.svg` on Linux,
+  Windows, and macOS. Linux and Windows rasterize those SVGs at runtime.
+- Daemon app icon is the green no-text brand mark (`logo.svg`), not the grey
+  falcon silhouette. macOS `AppIcon.png`, Linux launcher icons, and Windows
+  `.ico` files are generated from that SVG.
+
 ## 0.13.3 - 2026-08-26
 
 Debian and Ubuntu installs now come from a GPG-verified apt repository

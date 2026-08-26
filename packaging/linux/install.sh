@@ -51,10 +51,7 @@ if [[ -z "$CLI" ]]; then
 fi
 
 TRAY="$(find_tray "$CLI" || true)"
-ICON_SRC="$REPO_ROOT/macos/Sources/KrypticDaemon/Resources/logo.png"
-if [[ ! -f "$ICON_SRC" ]]; then
-  ICON_SRC="$REPO_ROOT/cmd/kryptic-tray/assets/kryptic.png"
-fi
+ICON_SRC="$REPO_ROOT/macos/Sources/KrypticDaemon/Resources/AppIcon.png"
 
 BINDIR="$HOME/.local/bin"
 APPDIR="$HOME/.local/share/applications"
