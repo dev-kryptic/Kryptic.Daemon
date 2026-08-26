@@ -12,10 +12,16 @@ Download a signed installer from [kryptic.dev/download](https://kryptic.dev/down
 That page detects your OS and architecture and serves the current build.
 
 ```bash
-# Linux
+# Linux (detects arch, verifies checksums, installs the CLI + tray + user service)
 curl -fsSL https://kryptic.dev/install.sh | sh
 kryptic login
 ```
+
+Debian/Ubuntu/elementary: the `.deb` from the download page is a desktop
+application (CLI, tray icon, launcher, starts at login). Double-clicking a
+sideloaded `.deb` in AppCenter still shows a third-party warning; that is the
+store, not a missing publisher field. `sudo apt install ./kryptic_*.deb` then
+launch **Kryptic** from the app menu, or run `kryptic-tray`.
 
 On macOS and Windows, run the installer from the download page, then `kryptic login`.
 
@@ -74,6 +80,10 @@ Windows/Linux counterpart of the macOS menu-bar app: the same menu (status,
 sign in/out, cancel sign-in, refresh secrets cache, About, quit), running the
 daemon in-process - one binary, no bundling. On Windows the daemon serves the
 named pipe `\\.\pipe\kryptic-daemon`.
+
+`packaging/linux/build-deb.sh` wraps those Linux binaries in a `.deb` with a
+`.desktop` file, icon, AppStream metainfo, and a systemd user unit.
+`packaging/linux/install.sh` does the same install into `~/.local` without root.
 
 `macos/build.sh` packages the menu-bar app with this binary bundled inside.
 `macos/build.sh --debug` builds it pointed at a local platform (`http://localhost:5211`,

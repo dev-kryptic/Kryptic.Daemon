@@ -3,6 +3,17 @@
 Notes for each Kryptic daemon release. The signed-release workflow copies the
 matching section into the GitHub Release.
 
+## 0.13.1 - 2026-08-26
+
+Linux now ships a real desktop application, not only a CLI and a systemd unit.
+
+### Fixed
+
+- Linux `.deb` and `install.sh` now install the tray as a desktop application
+  (launcher, autostart, icon, AppStream metadata, maintainer, and license).
+  Opening the previous package in AppCenter showed "Unknown publisher" and no
+  launchable app because only the CLI and a systemd unit were packaged.
+
 ## 0.13.0 - 2026-08-26
 
 Signed in is not the same as able to decrypt. This release makes a missing

@@ -678,71 +678,13 @@ jobs:
           MAINTAINER: ${{ vars.COMPANY_NAME }}
         run: |
           set -euo pipefail
-
-          PKGROOT="$RUNNER_TEMP/kryptic-deb"
-          mkdir -p "$PKGROOT/DEBIAN"
-          mkdir -p "$PKGROOT/usr/bin"
-          mkdir -p "$PKGROOT/usr/lib/systemd/user"
-
-          install -m 0755 "dist/kryptic_linux_${GOARCH}" "$PKGROOT/usr/bin/kryptic"
-          install -m 0755 "dist/kryptic-tray_linux_${GOARCH}" "$PKGROOT/usr/bin/kryptic-tray"
-
-          # The repository's user unit points to ~/.local/bin/kryptic because it
-          # was written for install.sh. The DEB installs globally, so adjust it.
-          sed 's#ExecStart=%h/.local/bin/kryptic start#ExecStart=/usr/bin/kryptic start#' \
-            packaging/linux/kryptic-daemon.service \
-            > "$PKGROOT/usr/lib/systemd/user/kryptic-daemon.service"
-
-          cat > "$PKGROOT/DEBIAN/control" <<EOF
-          Package: kryptic
-          Version: $VERSION
-          Section: utils
-          Priority: optional
-          Architecture: $DEBARCH
-          Maintainer: $MAINTAINER
-          Homepage: https://kryptic.dev
-          Description: Kryptic secrets daemon, CLI and tray application
-           Local daemon and CLI for securely accessing Kryptic-managed secrets.
-          EOF
-
-          cat > "$PKGROOT/DEBIAN/preinst" <<'EOF'
-          #!/bin/sh
-          set -e
-          stop_user() {
-            u="$1"
-            uid=$(id -u "$u") || return 0
-            export XDG_RUNTIME_DIR="/run/user/$uid"
-            sudo -u "$u" -E systemctl --user stop kryptic-daemon 2>/dev/null || true
-            pkill -u "$u" -x kryptic-tray 2>/dev/null || true
-            pkill -u "$u" -x kryptic 2>/dev/null || true
-          }
-          if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
-            stop_user "$SUDO_USER"
-          fi
-          exit 0
-          EOF
-          chmod 0755 "$PKGROOT/DEBIAN/preinst"
-
-          cat > "$PKGROOT/DEBIAN/postinst" <<'EOF'
-          #!/bin/sh
-          set -e
-          start_user() {
-            u="$1"
-            uid=$(id -u "$u") || return 0
-            export XDG_RUNTIME_DIR="/run/user/$uid"
-            sudo -u "$u" -E systemctl --user daemon-reload 2>/dev/null || true
-            sudo -u "$u" -E systemctl --user enable --now kryptic-daemon 2>/dev/null || true
-          }
-          if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
-            start_user "$SUDO_USER"
-          fi
-          exit 0
-          EOF
-          chmod 0755 "$PKGROOT/DEBIAN/postinst"
-
-          dpkg-deb --root-owner-group --build "$PKGROOT" \
-            "release/kryptic_${VERSION}_${DEBARCH}.deb"
-
+          chmod +x packaging/linux/build-deb.sh
+          packaging/linux/build-deb.sh \
+            --version "$VERSION" \
+            --debarch "$DEBARCH" \
+            --cli "dist/kryptic_linux_${GOARCH}" \
+            --tray "dist/kryptic-tray_linux_${GOARCH}" \
+            --out "release/kryptic_${VERSION}_${DEBARCH}.deb"
           cp "dist/kryptic_linux_${GOARCH}" release/
           cp "dist/kryptic-tray_linux_${GOARCH}" release/
 

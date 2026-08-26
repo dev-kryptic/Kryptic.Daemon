@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.kryptic.Kryptic</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Kryptic</name>
+  <summary>Kryptic secrets daemon, CLI and tray application</summary>
+  <description>
+    <p>
+      Local daemon, CLI, and tray app for securely accessing Kryptic-managed
+      secrets. Sign in once in the browser, then every project on this machine
+      can inject secrets at startup over a local socket.
+    </p>
+  </description>
+  <url type="homepage">https://kryptic.dev</url>
+  <url type="bugtracker">https://github.com/dev-kryptic/Kryptic.Daemon/issues</url>
+  <url type="help">https://docs.kryptic.dev</url>
+  <developer_name>Kryptic</developer_name>
+  <developer id="dev.kryptic">
+    <name>Kryptic</name>
+  </developer>
+  <launchable type="desktop-id">dev.kryptic.Kryptic.desktop</launchable>
+  <icon type="stock">kryptic</icon>
+  <provides>
+    <binary>kryptic</binary>
+    <binary>kryptic-tray</binary>
+  </provides>
+  <categories>
+    <category>Utility</category>
+    <category>Security</category>
+  </categories>
+  <content_rating type="oars-1.1" />
+  <update_contact>hello@kryptic.dev</update_contact>
+</component>

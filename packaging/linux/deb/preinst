@@ -1,0 +1,19 @@
+#!/bin/sh
+set -e
+
+stop_user() {
+  u="$1"
+  uid=$(id -u "$u") || return 0
+  export XDG_RUNTIME_DIR="/run/user/$uid"
+  sudo -u "$u" -E systemctl --user stop kryptic-daemon 2>/dev/null || true
+  pkill -u "$u" -x kryptic-tray 2>/dev/null || true
+  pkill -u "$u" -x kryptic 2>/dev/null || true
+}
+
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+  stop_user "$SUDO_USER"
+elif [ -n "${PKEXEC_UID:-}" ] && [ "$PKEXEC_UID" != "0" ]; then
+  stop_user "$(id -nu "$PKEXEC_UID")"
+fi
+
+exit 0
