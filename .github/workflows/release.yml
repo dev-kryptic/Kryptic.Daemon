@@ -688,39 +688,6 @@ jobs:
           cp "dist/kryptic_linux_${GOARCH}" release/
           cp "dist/kryptic-tray_linux_${GOARCH}" release/
 
-      - name: Install snapcraft
-        run: sudo snap install snapcraft --classic
-
-      - name: Build Snap
-        shell: bash
-        env:
-          VERSION: ${{ needs.validate.outputs.version }}
-          GOARCH: ${{ matrix.goarch }}
-        run: |
-          set -euo pipefail
-          chmod +x packaging/linux/build-snap.sh
-          packaging/linux/build-snap.sh \
-            --version "$VERSION" \
-            --arch "$GOARCH" \
-            --cli "dist/kryptic_linux_${GOARCH}" \
-            --tray "dist/kryptic-tray_linux_${GOARCH}" \
-            --out "release/kryptic_${VERSION}_${GOARCH}.snap"
-
-      - name: Publish Snap to edge
-        shell: bash
-        env:
-          VERSION: ${{ needs.validate.outputs.version }}
-          GOARCH: ${{ matrix.goarch }}
-          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
-        run: |
-          set -euo pipefail
-          if [ -z "${SNAPCRAFT_STORE_CREDENTIALS:-}" ]; then
-            echo "SNAPCRAFT_STORE_CREDENTIALS is not set; skipping Snap Store upload."
-            echo "Export login with: snapcraft export-login --snaps=kryptic --acls package_access,package_push,package_release -"
-            exit 0
-          fi
-          snapcraft upload --release=edge "release/kryptic_${VERSION}_${GOARCH}.snap"
-
       - name: Import Linux release signing key
         shell: bash
         env:
@@ -878,3 +845,76 @@ jobs:
               --notes-file "$NOTES_FILE" \
               --verify-tag
           fi
+
+  apt-repo:
+    name: Publish apt repository
+    needs:
+      - validate
+      - release
+
+    runs-on: ubuntu-latest
+    environment: release-signing
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: release-linux-*
+          path: release
+          merge-multiple: true
+
+      - name: Import Linux release signing key
+        shell: bash
+        env:
+          GPG_PRIVATE_KEY_B64: ${{ secrets.LINUX_GPG_PRIVATE_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          echo "$GPG_PRIVATE_KEY_B64" | base64 --decode > "$RUNNER_TEMP/kryptic-release-signing.asc"
+          gpg --batch --import "$RUNNER_TEMP/kryptic-release-signing.asc"
+
+      - name: Build signed apt repository
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          GPG_KEY_ID: ${{ secrets.LINUX_GPG_KEY_ID }}
+          GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -q
+          sudo apt-get install -qy dpkg-dev apt-utils
+          chmod +x packaging/linux/build-apt-repo.sh
+          packaging/linux/build-apt-repo.sh \
+            --version "$VERSION" \
+            --key-id "$GPG_KEY_ID" \
+            --out apt-repo \
+            --deb "release/kryptic_${VERSION}_amd64.deb" \
+            --deb "release/kryptic_${VERSION}_arm64.deb"
+
+      - name: Verify repository signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          gpg --verify apt-repo/dists/stable/Release.gpg apt-repo/dists/stable/Release
+          gpg --verify apt-repo/dists/stable/InRelease
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: apt-repo
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4

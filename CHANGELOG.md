@@ -5,6 +5,24 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+## 0.13.3 - 2026-08-26
+
+Debian and Ubuntu installs now come from a GPG-verified apt repository
+instead of sideloaded packages.
+
+### Added
+
+- Signed apt repository (`packaging/linux/build-apt-repo.sh`, published to
+  GitHub Pages and served at `https://kryptic.dev/apt`). Debian/Ubuntu
+  installs and upgrades are verified against the Kryptic release GPG key:
+  `sudo apt install kryptic`, no sideload warnings.
+
+### Removed
+
+- Snap packaging. A sideloaded `.snap` needs `--dangerous` to install and a
+  Snap Store listing needs manual review for classic confinement, so the
+  Snap path is gone in favor of the signed apt repository.
+
 ## 0.13.2 - 2026-08-26
 
 Ubuntu App Center only shows a publisher for Snap Store listings. This
