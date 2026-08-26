@@ -35,10 +35,12 @@ parts:
     organize:
       kryptic: bin/kryptic
       kryptic-tray: bin/kryptic-tray
+      kryptic-tray.desktop: share/applications/kryptic-tray.desktop
 
 apps:
   kryptic:
     command: bin/kryptic
   kryptic-tray:
     command: bin/kryptic-tray
-    desktop: snap/gui/kryptic-tray.desktop
+    # Must be a path inside the primed filesystem, not a project asset path.
+    desktop: share/applications/kryptic-tray.desktop

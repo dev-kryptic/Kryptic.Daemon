@@ -49,8 +49,10 @@ install -d "$WORKDIR/prime-src" "$WORKDIR/snap/gui"
 install -m 0755 "$CLI" "$WORKDIR/prime-src/kryptic"
 install -m 0755 "$TRAY" "$WORKDIR/prime-src/kryptic-tray"
 install -m 0644 "$ICON" "$WORKDIR/snap/gui/kryptic.png"
+# The desktop file rides through the part into prime; snapcraft resolves the
+# app's desktop key against the prime dir, not the project assets dir.
 install -m 0644 "$ROOT/packaging/linux/snap/kryptic.desktop" \
-  "$WORKDIR/snap/gui/kryptic-tray.desktop"
+  "$WORKDIR/prime-src/kryptic-tray.desktop"
 
 sed -e "s/@VERSION@/$VERSION/g" -e "s/@ARCH@/$ARCH/g" \
   "$ROOT/packaging/linux/snap/snapcraft.yaml.in" \

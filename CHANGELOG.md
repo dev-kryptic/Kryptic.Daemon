@@ -5,10 +5,21 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+## 0.13.2 - 2026-08-26
+
+Ubuntu App Center only shows a publisher for Snap Store listings. This
+release packages the Linux CLI and tray as a classic Snap.
+
 ### Added
 
 - Classic Snap package (`packaging/linux/build-snap.sh`) so Ubuntu App Center
   can list Kryptic with a real publisher. Sideloaded `.deb` files cannot.
+
+### Fixed
+
+- Snapcraft now finds the tray desktop file: it is staged into the primed
+  snap (`share/applications/kryptic-tray.desktop`) instead of the project
+  `snap/gui/` assets folder.
 
 ## 0.13.1 - 2026-08-26
 
