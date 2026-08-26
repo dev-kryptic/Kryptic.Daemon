@@ -3,6 +3,13 @@
 Notes for each Kryptic daemon release. The signed-release workflow copies the
 matching section into the GitHub Release.
 
+## Unreleased
+
+### Added
+
+- Classic Snap package (`packaging/linux/build-snap.sh`) so Ubuntu App Center
+  can list Kryptic with a real publisher. Sideloaded `.deb` files cannot.
+
 ## 0.13.1 - 2026-08-26
 
 Linux now ships a real desktop application, not only a CLI and a systemd unit.

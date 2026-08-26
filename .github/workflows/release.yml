@@ -688,6 +688,39 @@ jobs:
           cp "dist/kryptic_linux_${GOARCH}" release/
           cp "dist/kryptic-tray_linux_${GOARCH}" release/
 
+      - name: Install snapcraft
+        run: sudo snap install snapcraft --classic
+
+      - name: Build Snap
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          chmod +x packaging/linux/build-snap.sh
+          packaging/linux/build-snap.sh \
+            --version "$VERSION" \
+            --arch "$GOARCH" \
+            --cli "dist/kryptic_linux_${GOARCH}" \
+            --tray "dist/kryptic-tray_linux_${GOARCH}" \
+            --out "release/kryptic_${VERSION}_${GOARCH}.snap"
+
+      - name: Publish Snap to edge
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          GOARCH: ${{ matrix.goarch }}
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SNAPCRAFT_STORE_CREDENTIALS:-}" ]; then
+            echo "SNAPCRAFT_STORE_CREDENTIALS is not set; skipping Snap Store upload."
+            echo "Export login with: snapcraft export-login --snaps=kryptic --acls package_access,package_push,package_release -"
+            exit 0
+          fi
+          snapcraft upload --release=edge "release/kryptic_${VERSION}_${GOARCH}.snap"
+
       - name: Import Linux release signing key
         shell: bash
         env:

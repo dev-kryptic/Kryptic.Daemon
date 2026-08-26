@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Kryptic
+GenericName=Secrets daemon
+Comment=Local daemon and tray for Kryptic-managed secrets
+Exec=kryptic-tray
+Icon=kryptic
+Terminal=false
+StartupNotify=false
+Categories=Utility;Security;
+Keywords=secrets;environment;daemon;cli;
+X-GNOME-UsesNotifications=true
+X-GNOME-Autostart-enabled=true
+StartupWMClass=kryptic-tray

@@ -1,0 +1,44 @@
+# Classic confinement is required. Language SDKs on the host connect to
+# $XDG_RUNTIME_DIR/kryptic-daemon.sock (or /tmp/kryptic-daemon.sock). A
+# strict snap hides that socket in a private namespace, so Node/Python/etc
+# would never see the daemon.
+#
+# After the first upload, request classic on https://snapcraft.io/kryptic
+# (Store → Settings → confinement). Edge can ship before that review lands.
+name: kryptic
+title: Kryptic
+base: core24
+version: '@VERSION@'
+summary: Kryptic secrets daemon, CLI and tray application
+description: |
+  Local daemon, CLI, and tray app for securely accessing Kryptic-managed
+  secrets. Sign in once in the browser, then every project on this machine
+  can inject secrets at startup over a local socket.
+license: GPL-3.0
+website: https://kryptic.dev
+contact: hello@kryptic.dev
+source-code: https://github.com/dev-kryptic/Kryptic.Daemon
+issues: https://github.com/dev-kryptic/Kryptic.Daemon/issues
+icon: snap/gui/kryptic.png
+confinement: classic
+grade: stable
+
+platforms:
+  @ARCH@:
+    build-on: [amd64]
+    build-for: [@ARCH@]
+
+parts:
+  kryptic:
+    plugin: dump
+    source: prime-src
+    organize:
+      kryptic: bin/kryptic
+      kryptic-tray: bin/kryptic-tray
+
+apps:
+  kryptic:
+    command: bin/kryptic
+  kryptic-tray:
+    command: bin/kryptic-tray
+    desktop: snap/gui/kryptic-tray.desktop
