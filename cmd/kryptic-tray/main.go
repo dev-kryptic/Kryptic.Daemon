@@ -38,6 +38,7 @@ func onReady() {
 	systray.SetIcon(currentTrayIcon())
 	systray.SetTooltip("Kryptic")
 	go watchTrayTheme()
+	go ensureLauncherIcon()
 
 	apiItem := systray.AddMenuItem("", "")
 	apiItem.Disable()

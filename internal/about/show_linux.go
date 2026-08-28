@@ -3,16 +3,15 @@
 package about
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"image"
-	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/dev-kryptic/daemon/internal/brand"
 )
 
 var showing sync.Mutex
@@ -124,7 +123,7 @@ func runKDialog() bool {
 // writeLogoTemp writes a 128px copy of the logo: yad renders images at native
 // size, and the embedded asset is 1000x1000.
 func writeLogoTemp() string {
-	scaled, err := scaledLogoPNG(128)
+	scaled, err := brand.ScaledLogoPNG(128)
 	if err != nil {
 		return ""
 	}
@@ -137,25 +136,6 @@ func writeLogoTemp() string {
 		return ""
 	}
 	return path
-}
-
-func scaledLogoPNG(size int) ([]byte, error) {
-	src, err := png.Decode(bytes.NewReader(logoPNG))
-	if err != nil {
-		return nil, err
-	}
-	b := src.Bounds()
-	out := image.NewRGBA(image.Rect(0, 0, size, size))
-	for y := 0; y < size; y++ {
-		for x := 0; x < size; x++ {
-			out.Set(x, y, src.At(b.Min.X+x*b.Dx()/size, b.Min.Y+y*b.Dy()/size))
-		}
-	}
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, out); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
 }
 
 func escapePango(s string) string {

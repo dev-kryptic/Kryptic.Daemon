@@ -5,6 +5,21 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+## 0.13.7 - 2026-08-28
+
+Linux tray restarts itself after an in-place update and self-heals the
+launcher icon.
+
+### Fixed
+
+- Linux tray restarts itself after an in-place update. `/proc/self/exe`
+  points at the renamed-and-deleted previous binary after the update's
+  rename dance, so the old re-exec failed silently and the previous version
+  kept running until a manual quit and relaunch.
+- Linux tray installs the launcher icon on every start (self-heal). Existing
+  installs from older packages get the green brand mark on the next update,
+  with no reinstall needed.
+
 ## 0.13.6 - 2026-08-28
 
 Linux launcher shows the green brand mark instead of GNOME's generic gear.

@@ -189,6 +189,11 @@ func currentExecutable() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// After an in-place update, /proc/self/exe on Linux points at the renamed
+	// (and by then deleted) previous binary: "/path/kryptic.old (deleted)".
+	// Map it back to the installed path so post-update restarts work.
+	executable = strings.TrimSuffix(executable, " (deleted)")
+	executable = strings.TrimSuffix(executable, ".old")
 	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
 		executable = resolved
 	}
