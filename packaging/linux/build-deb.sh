@@ -35,8 +35,12 @@ if [[ "$MAINTAINER" != *"<"* ]]; then
   MAINTAINER="Kryptic <hello@kryptic.dev>"
 fi
 
-ICON="$ROOT/macos/Sources/KrypticDaemon/Resources/AppIcon.png"
-[[ -f "$ICON" ]] || { echo "app icon not found: $ICON" >&2; exit 1; }
+ICON_PNG="$ROOT/packaging/linux/kryptic.png"
+ICON_SVG="$ROOT/packaging/linux/kryptic.svg"
+[[ -f "$ICON_PNG" || -f "$ICON_SVG" ]] || {
+  echo "app icon not found: $ICON_PNG or $ICON_SVG" >&2
+  exit 1
+}
 
 PKGROOT="$(mktemp -d)"
 trap 'rm -rf "$PKGROOT"' EXIT
@@ -49,7 +53,7 @@ install -d -m 0755 \
   "$PKGROOT/etc/xdg/autostart" \
   "$PKGROOT/usr/share/metainfo" \
   "$PKGROOT/usr/share/icons/hicolor/256x256/apps" \
-  "$PKGROOT/usr/share/icons/hicolor/128x128/apps" \
+  "$PKGROOT/usr/share/icons/hicolor/scalable/apps" \
   "$PKGROOT/usr/share/pixmaps" \
   "$PKGROOT/usr/share/doc/kryptic"
 
@@ -73,9 +77,14 @@ install -m 0644 "$ROOT/CHANGELOG.md" \
   "$PKGROOT/usr/share/doc/kryptic/changelog"
 gzip -n -9 "$PKGROOT/usr/share/doc/kryptic/changelog"
 
-install -m 0644 "$ICON" "$PKGROOT/usr/share/icons/hicolor/256x256/apps/kryptic.png"
-install -m 0644 "$ICON" "$PKGROOT/usr/share/icons/hicolor/128x128/apps/kryptic.png"
-install -m 0644 "$ICON" "$PKGROOT/usr/share/pixmaps/kryptic.png"
+if [[ -f "$ICON_PNG" ]]; then
+  install -m 0644 "$ICON_PNG" "$PKGROOT/usr/share/icons/hicolor/256x256/apps/kryptic.png"
+  install -m 0644 "$ICON_PNG" "$PKGROOT/usr/share/pixmaps/kryptic.png"
+fi
+if [[ -f "$ICON_SVG" ]]; then
+  install -m 0644 "$ICON_SVG" "$PKGROOT/usr/share/icons/hicolor/scalable/apps/kryptic.svg"
+  install -m 0644 "$ICON_SVG" "$PKGROOT/usr/share/pixmaps/kryptic.svg"
+fi
 
 install -m 0755 "$ROOT/packaging/linux/deb/preinst" "$PKGROOT/DEBIAN/preinst"
 install -m 0755 "$ROOT/packaging/linux/deb/postinst" "$PKGROOT/DEBIAN/postinst"

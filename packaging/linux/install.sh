@@ -5,7 +5,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 UNIT_SOURCE="$SCRIPT_DIR/kryptic-daemon.service"
 DESKTOP_SOURCE="$SCRIPT_DIR/dev.kryptic.Kryptic.desktop"
 
@@ -51,12 +50,14 @@ if [[ -z "$CLI" ]]; then
 fi
 
 TRAY="$(find_tray "$CLI" || true)"
-ICON_SRC="$REPO_ROOT/macos/Sources/KrypticDaemon/Resources/AppIcon.png"
+ICON_PNG="$SCRIPT_DIR/kryptic.png"
+ICON_SVG="$SCRIPT_DIR/kryptic.svg"
 
 BINDIR="$HOME/.local/bin"
 APPDIR="$HOME/.local/share/applications"
 AUTOSTART="$HOME/.config/autostart"
 ICONDIR="$HOME/.local/share/icons/hicolor/256x256/apps"
+SCALEDIR="$HOME/.local/share/icons/hicolor/scalable/apps"
 PIXMAP="$HOME/.local/share/pixmaps"
 
 echo "Installing kryptic to $BINDIR…"
@@ -73,21 +74,32 @@ else
   echo "Download kryptic-tray_linux_$(uname -m) from https://kryptic.dev/download for the desktop app."
 fi
 
+ICON_VALUE=kryptic
+if [[ -f "$ICON_PNG" ]]; then
+  install -Dm644 "$ICON_PNG" "$ICONDIR/kryptic.png"
+  install -Dm644 "$ICON_PNG" "$PIXMAP/kryptic.png"
+  ICON_VALUE="$ICONDIR/kryptic.png"
+fi
+if [[ -f "$ICON_SVG" ]]; then
+  install -Dm644 "$ICON_SVG" "$SCALEDIR/kryptic.svg"
+  install -Dm644 "$ICON_SVG" "$PIXMAP/kryptic.svg"
+  if [[ "$ICON_VALUE" == "kryptic" ]]; then
+    ICON_VALUE="$SCALEDIR/kryptic.svg"
+  fi
+fi
+
 if [[ -f "$DESKTOP_SOURCE" && -n "$TRAY" ]]; then
   mkdir -p "$APPDIR"
   # User-local installs are not on a default PATH for .desktop Exec= lookups
-  # on every distro, so pin the tray path.
+  # on every distro, so pin the tray path. Pin Icon= the same way: a named
+  # lookup of "kryptic" is a generic gear when the theme has no such icon.
   sed -e "s#^Exec=kryptic-tray\$#Exec=$BINDIR/kryptic-tray#" \
       -e "s#^TryExec=kryptic-tray\$#TryExec=$BINDIR/kryptic-tray#" \
+      -e "s#^Icon=kryptic\$#Icon=$ICON_VALUE#" \
       "$DESKTOP_SOURCE" > "$APPDIR/dev.kryptic.Kryptic.desktop"
   chmod 0644 "$APPDIR/dev.kryptic.Kryptic.desktop"
   install -Dm644 "$APPDIR/dev.kryptic.Kryptic.desktop" \
     "$AUTOSTART/dev.kryptic.Kryptic.desktop"
-fi
-
-if [[ -f "$ICON_SRC" ]]; then
-  install -Dm644 "$ICON_SRC" "$ICONDIR/kryptic.png"
-  install -Dm644 "$ICON_SRC" "$PIXMAP/kryptic.png"
 fi
 
 if command -v update-desktop-database >/dev/null 2>&1; then

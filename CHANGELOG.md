@@ -5,6 +5,16 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+## 0.13.6 - 2026-08-28
+
+Linux launcher shows the green brand mark instead of GNOME's generic gear.
+
+### Fixed
+
+- Linux launcher shows the green brand mark. `install.sh` and the `.deb`
+  ship `kryptic.png` / `kryptic.svg`. The previous packages named
+  `Icon=kryptic` without installing an icon, so GNOME showed a generic gear.
+
 ## 0.13.5 - 2026-08-27
 
 Linux updates replace the installed binaries in place instead of opening a
