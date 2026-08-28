@@ -5,6 +5,22 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+## 0.13.8 - 2026-08-28
+
+One tray instance per user, and Windows starts Kryptic at login.
+
+### Fixed
+
+- Launching the tray twice no longer shows two tray icons. A per-user lock
+  (flock on Linux, named mutex on Windows) makes the second launch a no-op.
+  The daemon socket could not guard this: a tray remote-controlling a
+  systemd-run daemon holds no socket.
+- Windows starts Kryptic at login, like Linux and macOS already did. The
+  installer registers the tray under `HKCU\...\Run` and the tray re-writes
+  the value on every start, so in-place updated installs get autostart
+  without re-running the installer. Turning Kryptic off in Task Manager's
+  Startup tab is respected: Windows keeps that toggle in a separate key.
+
 ## 0.13.7 - 2026-08-28
 
 Linux tray restarts itself after an in-place update and self-heals the

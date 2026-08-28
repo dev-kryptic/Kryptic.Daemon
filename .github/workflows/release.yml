@@ -525,6 +525,9 @@ jobs:
 
           [Registry]
           Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Check: NeedsAddPath(ExpandConstant('{app}'))
+          ; Autostart at login, like ~/.config/autostart on Linux. The tray
+          ; also self-heals this value on every start (autostart_windows.go).
+          Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Kryptic"; ValueData: """{app}\kryptic-tray.exe"""; Flags: uninsdeletevalue
 
           [Icons]
           Name: "{autoprograms}\Kryptic"; Filename: "{app}\kryptic-tray.exe"

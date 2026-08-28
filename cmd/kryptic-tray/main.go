@@ -27,10 +27,30 @@ import (
 	"github.com/dev-kryptic/daemon/internal/login"
 	"github.com/dev-kryptic/daemon/internal/pidfile"
 	"github.com/dev-kryptic/daemon/internal/server"
+	"github.com/dev-kryptic/daemon/internal/singleinstance"
 	"github.com/dev-kryptic/daemon/internal/update"
 )
 
+// trayLock is held for the process lifetime. The re-exec fallback releases it
+// before spawning the replacement, so the new instance can take it.
+var trayLock func()
+
+func releaseTrayLock() {
+	if trayLock != nil {
+		trayLock()
+		trayLock = nil
+	}
+}
+
 func main() {
+	release, ok := singleinstance.Acquire("kryptic-tray")
+	if !ok {
+		// A second launch (autostart plus a manual click, say) is a no-op:
+		// one tray icon per user, never two.
+		log.Println("kryptic-tray is already running for this user")
+		return
+	}
+	trayLock = release
 	systray.Run(onReady, nil)
 }
 
@@ -39,6 +59,7 @@ func onReady() {
 	systray.SetTooltip("Kryptic")
 	go watchTrayTheme()
 	go ensureLauncherIcon()
+	go ensureAutostart()
 
 	apiItem := systray.AddMenuItem("", "")
 	apiItem.Disable()
