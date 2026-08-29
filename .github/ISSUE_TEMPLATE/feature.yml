@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest an improvement to this repository.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        Protocol or wire-format changes usually need a matching change in
+        sibling repositories. Check CONTRIBUTING.md before starting the work.
