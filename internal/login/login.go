@@ -14,6 +14,7 @@ import (
 	"github.com/dev-kryptic/Kryptic.Encryption.Go/sealedbox"
 	"github.com/dev-kryptic/daemon/internal/api"
 	"github.com/dev-kryptic/daemon/internal/authstore"
+	"github.com/dev-kryptic/daemon/internal/ipc"
 	"github.com/dev-kryptic/daemon/internal/server"
 )
 
@@ -102,7 +103,15 @@ func Logout(client *api.Client) error {
 			_ = client.Logout(tokens.AccessToken)
 		}
 	}
-	return authstore.Clear()
+	err = authstore.Clear()
+
+	// A running daemon keeps its access token and decrypted bundles in memory
+	// for up to 15 minutes. Tell it to drop them so `kryptic status` and the
+	// language packages see the sign-out immediately (best effort - the daemon
+	// may not be running).
+	_, _ = ipc.Request(map[string]any{"type": "reset-auth"})
+
+	return err
 }
 
 func OpenBrowser(url string) {

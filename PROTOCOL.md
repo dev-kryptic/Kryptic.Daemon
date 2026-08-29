@@ -91,6 +91,20 @@ so an updated secret is refetched immediately instead of after the 5-minute TTL.
 { "v": 1, "ok": true, "cleared": 2 }
 ```
 
+### `reset-auth` - drop the daemon's in-memory auth state
+
+Additive in v1. Sent by `kryptic logout` (and the tray / menu-bar sign-out) so a
+running daemon immediately drops its cached access token and decrypted bundles
+instead of serving them until the token expires. Packages never send this.
+
+```json
+{ "v": 1, "type": "reset-auth" }
+```
+
+```json
+{ "v": 1, "ok": true }
+```
+
 ## Error responses
 
 ```json

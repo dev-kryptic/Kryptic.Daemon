@@ -124,6 +124,8 @@ func (s *Server) handle(connection net.Conn) {
 		s.reply(connection, s.handleStatus())
 	case "flush":
 		s.reply(connection, s.handleFlush())
+	case "reset-auth":
+		s.reply(connection, s.handleResetAuth())
 	default:
 		s.reply(connection, errorResponse("internal", "unknown request type"))
 	}
@@ -243,6 +245,15 @@ func (s *Server) ResetAuth() {
 	s.accessToken = ""
 	s.tokenExpiry = time.Time{}
 	s.cache = map[string]cacheEntry{}
+}
+
+// handleResetAuth is `reset-auth` on the socket: ResetAuth for an out-of-process
+// caller. `kryptic logout` sends it so a running daemon reflects the sign-out
+// immediately instead of serving its cached token until expiry (up to 15 min).
+func (s *Server) handleResetAuth() map[string]any {
+	s.ResetAuth()
+	log.Printf("signed out - dropped the access token and secrets cache")
+	return map[string]any{"ok": true}
 }
 
 // handleFlush drops every cached bundle so the next SDK request refetches from the

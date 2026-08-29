@@ -7,7 +7,15 @@ matching section into the GitHub Release.
 
 ## 0.13.9 - 2026-08-29
 
-Confirm sign-out, because logout drops the device grant.
+Confirm sign-out, and make a running daemon notice it immediately.
+
+### Fixed
+
+- `kryptic logout` now tells a running daemon to drop its in-memory access
+  token and decrypted secrets cache (new `reset-auth` socket request). Signing
+  out from a second terminal previously left `kryptic status` reporting the
+  user as signed in, and cached secrets servable, for up to 15 minutes on
+  every OS.
 
 ### Changed
 
