@@ -212,6 +212,14 @@ func onReady() {
 
 			case <-signOutItem.ClickedCh:
 				go func() {
+					// Signing out destroys the device key, so the org-key
+					// grant is lost for good - never do it silently.
+					if !dialog.Confirm("Kryptic",
+						"Signing out deletes this device's encryption key. "+
+							"When you sign in again, an admin must grant the organization key "+
+							"to this device again before it can decrypt any secrets.\n\nSign out?") {
+						return
+					}
 					_ = login.Logout(client)
 					if ownedServer != nil {
 						ownedServer.ResetAuth()

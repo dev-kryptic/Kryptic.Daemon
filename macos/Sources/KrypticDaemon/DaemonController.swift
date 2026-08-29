@@ -230,7 +230,8 @@ final class DaemonController {
     func logout(onFinished: @escaping () -> Void) {
         guard let binary = Self.binaryURL() else { return }
 
-        let process = Self.makeProcess(binary, ["logout"])
+        // --yes: the app has already shown its own confirmation dialog.
+        let process = Self.makeProcess(binary, ["logout", "--yes"])
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         process.terminationHandler = { _ in

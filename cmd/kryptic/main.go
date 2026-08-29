@@ -79,7 +79,7 @@ func usage() {
   kryptic start                 run the daemon (foreground; managed by launchd/systemd)
   kryptic stop                  stop the running daemon
   kryptic login                 sign in via your browser (device flow)
-  kryptic logout                revoke this device's session
+  kryptic logout                revoke this device's session (asks to confirm; --yes skips)
   kryptic status                daemon + session status
   kryptic whoami                the signed-in user and organization
   kryptic secrets list          projects and environments you can pull
@@ -216,6 +216,10 @@ func runLogin(client *api.Client) error {
 }
 
 func runLogout(client *api.Client) error {
+	if !logoutConfirmed() {
+		fmt.Println("Logout cancelled - you are still signed in.")
+		return nil
+	}
 	if err := login.Logout(client); err != nil {
 		return err
 	}
@@ -223,6 +227,32 @@ func runLogout(client *api.Client) error {
 	fmt.Println("after your next `kryptic login`, an admin must re-grant the organization")
 	fmt.Println("key to this device under Approvals before secrets can be decrypted.")
 	return nil
+}
+
+// logoutConfirmed warns that signing out discards the device's org-key grant
+// and asks before proceeding. `--yes`/`-y` skips the prompt, and so does a
+// non-interactive stdin (scripts, the menu-bar app shelling out to the CLI)
+// where a prompt would hang.
+func logoutConfirmed() bool {
+	for _, arg := range os.Args[2:] {
+		if arg == "--yes" || arg == "-y" {
+			return true
+		}
+	}
+	stat, err := os.Stdin.Stat()
+	if err != nil || stat.Mode()&os.ModeCharDevice == 0 {
+		return true
+	}
+
+	fmt.Println("Signing out revokes this device's session and deletes its encryption key.")
+	fmt.Println("When you sign in again, an admin must grant the organization key to this")
+	fmt.Println("device again under Approvals before it can decrypt any secrets.")
+	fmt.Print("Sign out anyway? [y/N] ")
+
+	var answer string
+	_, _ = fmt.Scanln(&answer)
+	answer = strings.ToLower(strings.TrimSpace(answer))
+	return answer == "y" || answer == "yes"
 }
 
 // platformAccessToken exchanges the stored refresh token for an access token,

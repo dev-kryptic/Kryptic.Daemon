@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 @MainActor
@@ -67,6 +68,18 @@ final class AppState: ObservableObject {
     }
 
     func logout() {
+        // Signing out destroys the device key, so the org-key grant is lost
+        let confirm = NSAlert()
+        confirm.messageText = "Sign out of Kryptic?"
+        confirm.informativeText = "Signing out deletes this device's encryption key. "
+            + "When you sign in again, an admin must grant the organization key "
+            + "to this device again before it can decrypt any secrets."
+        confirm.alertStyle = .warning
+        confirm.addButton(withTitle: "Sign Out")
+        confirm.addButton(withTitle: "Cancel")
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        guard confirm.runModal() == .alertFirstButtonReturn else { return }
+
         controller.logout { [weak self] in
             self?.refresh()
         }

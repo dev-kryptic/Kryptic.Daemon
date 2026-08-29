@@ -5,6 +5,18 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+## 0.13.9 - 2026-08-29
+
+Confirm sign-out, because logout drops the device grant.
+
+### Changed
+
+- Signing out now asks for confirmation everywhere, because logout deletes the
+  device's encryption key and the next login needs a fresh org-key grant from
+  an admin. The CLI prompts `[y/N]` when run interactively (`--yes` or a
+  non-interactive stdin skips it), and the tray (Windows/Linux) and menu-bar
+  app (macOS) show a confirmation dialog.
+
 ## 0.13.8 - 2026-08-28
 
 One tray instance per user, and Windows starts Kryptic at login.
