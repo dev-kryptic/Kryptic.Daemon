@@ -175,6 +175,9 @@ func (s *Server) handleSecrets(req request) map[string]any {
 				}
 				return errorResponse("access_denied", message)
 			case 404:
+				if isUnknownEnvironment(apiError) {
+					return errorResponse("unknown_environment", apiError.Message)
+				}
 				return errorResponse("unknown_project", apiError.Message)
 			}
 		}
@@ -184,6 +187,12 @@ func (s *Server) handleSecrets(req request) map[string]any {
 	secrets, err := decryptBundle(bundle)
 	if err != nil {
 		log.Printf("bundle decrypt failed for %s/%s: %v", req.ProjectId, req.Environment, err)
+		// PROTOCOL.md: no org-key grant (missing, stale, or wrong device key)
+		// is access_denied so packages skip the same way as a project 403.
+		if isGrantFailure(err) {
+			notifyMissingOrgKey()
+			return errorResponse("access_denied", err.Error())
+		}
 		return errorResponse("internal", err.Error())
 	}
 
@@ -356,6 +365,21 @@ func (s *Server) token() (string, error) {
 	s.accessToken = tokens.AccessToken
 	s.tokenExpiry = time.Now().Add(time.Duration(tokens.ExpiresInSeconds) * time.Second)
 	return s.accessToken, nil
+}
+
+func isUnknownEnvironment(err *api.APIError) bool {
+	if err.Code == "unknown_environment" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Message), "environment")
+}
+
+func isGrantFailure(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unwrap the org key") ||
+		strings.Contains(msg, "no device key") ||
+		strings.Contains(msg, "invalid wrapped org key") ||
+		strings.Contains(msg, "device key is corrupt")
 }
 
 func asAPIError(err error, target **api.APIError) bool {

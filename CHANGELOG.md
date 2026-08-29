@@ -5,6 +5,18 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+## 0.13.10 - 2026-08-29
+
+Return the protocol skip codes for a missing environment and a stale grant.
+
+### Fixed
+
+- A missing environment now returns `unknown_environment` instead of
+  collapsing every 404 into `unknown_project`.
+- A stale or missing organization-key grant now returns `access_denied`
+  (as PROTOCOL.md already specified) instead of `internal`, so packages
+  skip the same way they do for a project the user cannot read.
+
 ## 0.13.9 - 2026-08-29
 
 Confirm sign-out, and make a running daemon notice it immediately.

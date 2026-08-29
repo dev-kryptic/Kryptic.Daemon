@@ -94,9 +94,12 @@ type Project struct {
 }
 
 // APIError carries the HTTP status so callers can distinguish auth problems
-// (revoked session) from access problems (no grant for the project).
+// (revoked session) from access problems (no grant for the project). Code is
+// the protocol error name when the BFF returns a structured body
+// ({"error":"unknown_environment","message":"..."}).
 type APIError struct {
 	Status  int
+	Code    string
 	Message string
 }
 
@@ -231,12 +234,16 @@ func readError(response *http.Response) error {
 	_, _ = buffer.ReadFrom(response.Body)
 	message := buffer.String()
 
-	// The API returns either a bare string or an { message } object.
+	// The API returns a bare string or an { error, message } object.
 	var wrapped struct {
+		Error   string `json:"error"`
 		Message string `json:"message"`
 	}
-	if json.Unmarshal(buffer.Bytes(), &wrapped) == nil && wrapped.Message != "" {
-		message = wrapped.Message
+	if json.Unmarshal(buffer.Bytes(), &wrapped) == nil && (wrapped.Message != "" || wrapped.Error != "") {
+		if wrapped.Message != "" {
+			message = wrapped.Message
+		}
+		return &APIError{Status: response.StatusCode, Code: wrapped.Error, Message: message}
 	}
 	var bare string
 	if json.Unmarshal(buffer.Bytes(), &bare) == nil && bare != "" {
