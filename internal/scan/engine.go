@@ -30,10 +30,67 @@ func (f Finding) Redacted() string {
 
 const maxFileSize = 1 << 20 // 1 MiB - larger files are generated artifacts, not source
 
+// Progress is called with a 0-100 percent and a short status line (current
+// file, or "Done"). A nil Progress is a no-op. TerminalProgress writes a bar
+// to stderr when it is a TTY.
+type Progress func(percent int, message string)
+
+// PathResult is one tree walk: every finding plus how many files were scanned.
+type PathResult struct {
+	Findings []Finding
+	Files    int
+}
+
+type scanFile struct {
+	abs string
+	rel string
+}
+
 // ScanPath walks a file or directory tree and returns all findings.
 func (c *Config) ScanPath(root string) ([]Finding, error) {
-	var findings []Finding
+	result, err := c.ScanPathWithProgress(root, nil)
+	if err != nil {
+		return nil, err
+	}
+	return result.Findings, nil
+}
 
+// ScanPathWithProgress is ScanPath with a 0-100% progress callback. Files are
+// collected first so the percentage is of real work, not of an unknown walk.
+func (c *Config) ScanPathWithProgress(root string, progress Progress) (PathResult, error) {
+	report := func(percent int, message string) {
+		if progress != nil {
+			progress(percent, message)
+		}
+	}
+	report(0, "Discovering files...")
+
+	files, err := c.collectScanFiles(root)
+	if err != nil {
+		return PathResult{}, err
+	}
+
+	total := len(files)
+	if total == 0 {
+		report(100, "Done")
+		return PathResult{}, nil
+	}
+
+	var findings []Finding
+	for i, file := range files {
+		report((i*100)/total, file.rel)
+		fileFindings, scanErr := c.scanFile(file.abs, file.rel)
+		if scanErr != nil {
+			continue // unreadable file (permissions, vanished) - skip, don't abort
+		}
+		findings = append(findings, fileFindings...)
+	}
+	report(100, "Done")
+	return PathResult{Findings: findings, Files: total}, nil
+}
+
+func (c *Config) collectScanFiles(root string) ([]scanFile, error) {
+	var files []scanFile
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -61,15 +118,10 @@ func (c *Config) ScanPath(root string) ([]Finding, error) {
 			return nil
 		}
 
-		fileFindings, scanErr := c.scanFile(path, relative)
-		if scanErr != nil {
-			return nil // unreadable file (permissions, vanished) - skip, don't abort the walk
-		}
-		findings = append(findings, fileFindings...)
+		files = append(files, scanFile{abs: path, rel: relative})
 		return nil
 	})
-
-	return findings, err
+	return files, err
 }
 
 // ScanContent scans an in-memory blob (used for `kryptic scan --staged` diffs
@@ -77,10 +129,31 @@ func (c *Config) ScanPath(root string) ([]Finding, error) {
 // content, exactly like gitleaks - several rules (private keys among them)
 // span multiple lines.
 func (c *Config) ScanContent(name, content string) []Finding {
+	return c.ScanContentWithProgress(name, content, nil)
+}
+
+// ScanContentWithProgress is ScanContent with a 0-100% progress callback.
+func (c *Config) ScanContentWithProgress(name, content string, progress Progress) []Finding {
+	report := func(percent int, message string) {
+		if progress != nil {
+			progress(percent, message)
+		}
+	}
+	report(0, name)
+
 	var findings []Finding
 	lower := strings.ToLower(content)
+	lastPercent := 0
+	ruleCount := len(c.Rules)
 
 	for ruleIndex := range c.Rules {
+		if ruleCount > 0 {
+			percent := (ruleIndex * 99) / ruleCount
+			if percent != lastPercent {
+				lastPercent = percent
+				report(percent, name)
+			}
+		}
 		rule := &c.Rules[ruleIndex]
 		if rule.Regex == nil {
 			continue
@@ -121,7 +194,9 @@ func (c *Config) ScanContent(name, content string) []Finding {
 		}
 	}
 
-	return dedupe(findings)
+	findings = dedupe(findings)
+	report(100, "Done")
+	return findings
 }
 
 func (c *Config) scanFile(path, relative string) ([]Finding, error) {

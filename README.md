@@ -38,7 +38,7 @@ kryptic whoami                # signed-in user and organization
 kryptic secrets list          # projects and environments you can pull
 kryptic secrets get KEY --project proj_x --env development
 kryptic flush                 # clear the daemon's secrets cache
-kryptic scan [PATH|--staged]  # scan for leaked secrets (gitleaks ruleset, local only)
+kryptic scan [PATH] [--staged] [--export [FILE|DIR]]  # scan for leaked secrets (gitleaks ruleset, local only)
 kryptic update                # replace this binary with the latest published build
 kryptic update --check        # report whether a newer release exists
 kryptic config                # show the Daemon BFF URL
@@ -54,8 +54,10 @@ kryptic logout
   libsecret on Linux (`secret-tool`), with a 0600 file fallback when no store is
   available. Access tokens (15 min) stay in memory.
 - **Scanning**: `kryptic scan` runs the gitleaks default ruleset (222 rules) fully
-  locally - nothing leaves the machine. Findings are redacted in the output and a
-  non-zero exit code makes it usable as a pre-commit or CI gate.
+  locally - nothing leaves the machine. A 0-100% progress bar is shown on a TTY.
+  Findings are redacted in the output and a non-zero exit code makes it usable as
+  a pre-commit or CI gate. `kryptic scan --export` writes a Markdown report
+  (`kryptic-scan-report.md` in the current directory when no path is given).
 - **Serving**: a unix socket (`/tmp/kryptic-daemon.sock`, 0600, override with
   `KRYPTIC_SOCKET_PATH`) speaking [PROTOCOL.md](PROTOCOL.md) v1. Every connection
   is authenticated by the caller's OS credentials (`LOCAL_PEERCRED`/`SO_PEERCRED`

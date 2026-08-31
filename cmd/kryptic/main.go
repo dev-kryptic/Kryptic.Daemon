@@ -87,7 +87,7 @@ func usage() {
   kryptic secrets export --project proj_x --env development   print a dotenv (decrypted locally)
   kryptic flush                 clear the daemon's secrets cache (refetch on next request)
   kryptic ci export --project proj_x --env production   pipeline secrets, decrypted locally
-  kryptic scan [PATH]           scan files for leaked secrets (also: --staged for the git index)
+  kryptic scan [PATH]           scan files for leaked secrets (--staged, --export [FILE|DIR])
   kryptic update                update kryptic to the latest release
   kryptic update --check        report whether a newer release exists (exit 2 if so)
   kryptic update --installer    download the signed installer and open it (macOS/Windows)
@@ -171,32 +171,54 @@ func runScan() error {
 		return err
 	}
 
-	args := os.Args[2:]
-	staged := false
-	root := "."
-	for _, arg := range args {
-		if arg == "--staged" {
-			staged = true
-		} else {
-			root = arg
-		}
+	opts, err := scan.ParseArgs(os.Args[2:])
+	if err != nil {
+		return err
 	}
 
+	progress := scan.TerminalProgress()
 	var findings []scan.Finding
-	if staged {
+	files := 0
+	target := opts.Root
+	if opts.Staged {
 		diff, err := stagedDiff()
 		if err != nil {
 			return err
 		}
-		findings = config.ScanContent("(staged diff)", diff)
+		target = "(staged git index)"
+		findings = config.ScanContentWithProgress("(staged diff)", diff, progress)
+		files = 1
 	} else {
-		findings, err = config.ScanPath(root)
+		result, err := config.ScanPathWithProgress(opts.Root, progress)
 		if err != nil {
 			return err
 		}
+		findings = result.Findings
+		files = result.Files
 	}
 
-	if scan.Report(findings) {
+	found := scan.Report(findings)
+
+	if opts.Export {
+		path, err := scan.ResolveExportPath(opts.ExportPath)
+		if err != nil {
+			return err
+		}
+		meta := scan.ExportMeta{
+			Target:    target,
+			Staged:    opts.Staged,
+			Files:     files,
+			Rules:     len(config.Rules),
+			Generated: time.Now(),
+			Version:   server.Version,
+		}
+		if err := scan.WriteReport(path, findings, meta); err != nil {
+			return err
+		}
+		fmt.Printf("wrote %s\n", path)
+	}
+
+	if found {
 		os.Exit(1) // CI-friendly: findings fail the build
 	}
 	return nil

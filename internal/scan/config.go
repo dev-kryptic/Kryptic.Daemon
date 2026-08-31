@@ -52,7 +52,7 @@ func Load() (*Config, error) {
 }
 
 // parse walks the TOML line by line. The generated file only ever contains
-// `key = value` pairs, `key = [ … ]` arrays (possibly multiline with '''…'''
+// `key = value` pairs, `key = [ … ]` arrays (possibly multiline with ”'…”'
 // literals) and the three section kinds handled below.
 func parse(input string) (*Config, error) {
 	config := &Config{}
@@ -209,7 +209,7 @@ func applyAllowlistKey(target *Allowlist, key string, values []string) error {
 }
 
 // arrayElement extracts one quoted element from a multiline array line
-// (always `'''…''',` or `"…",` in the generated file).
+// (always `”'…”',` or `"…",` in the generated file).
 func arrayElement(line string) (string, bool) {
 	line = strings.TrimSuffix(strings.TrimSpace(line), ",")
 	if line == "" {
