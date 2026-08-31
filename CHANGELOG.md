@@ -5,6 +5,21 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+## 0.13.11 - 2026-08-31
+
+Scan progress on a TTY, and a branded Markdown export.
+
+### Added
+
+- `kryptic scan --export [FILE|DIR]` writes a Markdown report with the
+  Kryptic logo, a summary, and redacted findings. Omit the path to write
+  `kryptic-scan-report.md` in the directory you ran the command from.
+
+### Changed
+
+- `kryptic scan` shows a 0-100% progress bar on a terminal. CI, pipes, and
+  git hooks stay quiet.
+
 ## 0.13.10 - 2026-08-29
 
 Return the protocol skip codes for a missing environment and a stale grant.
