@@ -4,8 +4,8 @@
 // An externally managed daemon (systemd, `kryptic start`) is detected and left
 // alone; the tray then acts as a remote control for it.
 //
-// The menu is a 1:1 match of the macOS MenuBarExtra: status, Scan…, sign in/out,
-// cancel sign-in, refresh cache, Check for Updates, Server URL, About, quit.
+// The menu is a 1:1 match of the macOS MenuBarExtra: status, sign in/out,
+// Operations, Settings, Help & Support, About, quit.
 package main
 
 import (
@@ -21,6 +21,7 @@ import (
 	"fyne.io/systray"
 	"github.com/dev-kryptic/daemon/internal/about"
 	"github.com/dev-kryptic/daemon/internal/api"
+	"github.com/dev-kryptic/daemon/internal/applog"
 	"github.com/dev-kryptic/daemon/internal/config"
 	"github.com/dev-kryptic/daemon/internal/dialog"
 	"github.com/dev-kryptic/daemon/internal/ipc"
@@ -72,8 +73,6 @@ func onReady() {
 	orgItem.Hide()
 
 	systray.AddSeparator()
-	scanItem := systray.AddMenuItem("Scan…", "Scan a folder for leaked secrets (offline, no sign-in)")
-	systray.AddSeparator()
 	codeItem := systray.AddMenuItem("", "")
 	codeItem.Disable()
 	codeItem.Hide()
@@ -82,11 +81,23 @@ func onReady() {
 	signInItem := systray.AddMenuItem("Sign In…", "Sign in via your browser")
 	signOutItem := systray.AddMenuItem("Sign Out…", "Revoke this device's session")
 	signOutItem.Hide()
-	flushItem := systray.AddMenuItem("Refresh Secrets Cache", "Refetch secrets on the next request")
+
+	systray.AddSeparator()
+	operations := systray.AddMenuItem("Operations", "")
+	flushItem := operations.AddSubMenuItem("Refresh Secrets Cache", "Refetch secrets on the next request")
 	flushItem.Disable()
-	updateItem := systray.AddMenuItem("Check for Updates…", "Install the latest Kryptic release")
-	serverItem := systray.AddMenuItem("Server URL…", "Point the daemon at a different Kryptic server")
-	aboutItem := systray.AddMenuItem("About Kryptic…", "About Kryptic")
+	scanItem := operations.AddSubMenuItem("Scan for secrets", "Scan a folder for leaked secrets (offline, no sign-in)")
+
+	settings := systray.AddMenuItem("Settings", "")
+	updateItem := settings.AddSubMenuItem("Check for Updates…", "Install the latest Kryptic release")
+	serverItem := settings.AddSubMenuItem("Server URI", "Point the daemon at a different Kryptic server")
+
+	help := systray.AddMenuItem("Help & Support", "")
+	githubItem := help.AddSubMenuItem("GitHub", "Open the Kryptic GitHub organization")
+	docsItem := help.AddSubMenuItem("Documentation", "Open docs.kryptic.dev")
+	logsItem := help.AddSubMenuItem("Reveal Diagnostics Log", "Open the support log file")
+
+	aboutItem := systray.AddMenuItem("About Kryptic", "About Kryptic")
 	systray.AddSeparator()
 	quitItem := systray.AddMenuItem("Quit Kryptic", "")
 
@@ -102,6 +113,7 @@ func onReady() {
 		go func() {
 			if err := ownedServer.Run(); err != nil {
 				log.Printf("kryptic daemon exited: %v", err)
+				applog.Error("tray", "daemon.exit", err)
 			}
 		}()
 	}
@@ -132,8 +144,10 @@ func onReady() {
 			granted, hasGrantField := response["orgKeyGranted"].(bool)
 			if hasGrantField && !granted {
 				statusItem.SetTitle("Daemon: online - waiting for organization key")
+			} else if email, ok := response["email"].(string); ok && email != "" {
+				statusItem.SetTitle("Daemon: online - " + email)
 			} else {
-				statusItem.SetTitle(fmt.Sprintf("Daemon: online - %v", response["email"]))
+				statusItem.SetTitle("Daemon: online - signed in")
 			}
 			if org, ok := response["organization"].(string); ok && org != "" {
 				orgItem.SetTitle(org)
@@ -247,8 +261,21 @@ func onReady() {
 					refresh()
 				}()
 
+			case <-githubItem.ClickedCh:
+				about.OpenGitHub()
+
+			case <-docsItem.ClickedCh:
+				about.OpenDocs()
+
 			case <-aboutItem.ClickedCh:
 				about.Show()
+
+			case <-logsItem.ClickedCh:
+				go func() {
+					if err := applog.Reveal(); err != nil {
+						dialog.Info("Kryptic", "Could not open the diagnostics log.")
+					}
+				}()
 
 			case <-quitItem.ClickedCh:
 				if wrotePidfile {
@@ -276,6 +303,7 @@ func shouldStartInProcess() bool {
 		return false
 	}
 	log.Printf("replacing daemon %s with %s (session kept)", running, server.Version)
+	applog.Event("tray", "daemon.replace", "session=kept")
 	if err := pidfile.StopRunning(); err != nil {
 		log.Printf("could not stop previous daemon: %v", err)
 		return false
@@ -362,7 +390,7 @@ func changeServerURL(client *api.Client, owned *server.Server) {
 		return
 	}
 	current, _ := config.API()
-	value, ok := dialog.Prompt("Kryptic", "Daemon server URL", current)
+	value, ok := dialog.Prompt("Kryptic", "Daemon server URI", current)
 	if !ok {
 		return
 	}

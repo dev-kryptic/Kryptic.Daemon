@@ -63,50 +63,47 @@ private struct MenuBarContent: View {
 
             Divider()
 
-            Button("Scan…") {
-                appState.scanFolder()
-            }
-            .disabled(!appState.binaryAvailable || appState.scanInProgress)
+            signInSection
 
             Divider()
 
-            if appState.loginInProgress {
-                if let code = appState.loginCode {
-                    Text("Confirm code in browser: \(code)")
+            Menu("Operations") {
+                Button("Refresh Secrets Cache") {
+                    appState.refreshSecretsCache()
                 }
-                Button("Cancel Sign-In") {
-                    appState.cancelLogin()
+                .disabled(!appState.status.running)
+
+                Button(appState.scanInProgress ? "Scanning…" : "Scan for secrets") {
+                    appState.scanFolder()
                 }
-            } else if appState.status.authenticated {
-                Button("Sign Out…") {
-                    appState.logout()
+                .disabled(!appState.binaryAvailable || appState.scanInProgress)
+            }
+
+            Menu("Settings") {
+                Button(appState.updateTitle) {
+                    appState.checkForUpdates()
                 }
-            } else {
-                if let error = appState.loginError {
-                    Text("⚠️ \(error)")
-                }
-                Button("Sign In…") {
-                    appState.login()
+                .disabled(!appState.binaryAvailable)
+
+                Button("Server URI") {
+                    appState.changeServerURL()
                 }
                 .disabled(!appState.binaryAvailable)
             }
 
-            Button("Refresh Secrets Cache") {
-                appState.refreshSecretsCache()
+            Menu("Help & Support") {
+                Button("GitHub") {
+                    SupportLinks.openGitHub()
+                }
+                Button("Documentation") {
+                    SupportLinks.openDocs()
+                }
+                Button("Reveal Diagnostics Log") {
+                    DiagnosticsLog.reveal()
+                }
             }
-            .disabled(!appState.status.running)
 
-            Button(appState.updateTitle) {
-                appState.checkForUpdates()
-            }
-            .disabled(!appState.binaryAvailable)
-
-            Button("Server URL…") {
-                appState.changeServerURL()
-            }
-            .disabled(!appState.binaryAvailable)
-
-            Button("About Kryptic…") {
+            Button("About Kryptic") {
                 AboutWindowPresenter.show(version: AppVersion.display)
             }
 
@@ -116,6 +113,31 @@ private struct MenuBarContent: View {
                 appState.shutdown()
                 NSApplication.shared.terminate(nil)
             }
+            .keyboardShortcut("q")
+        }
+    }
+
+    @ViewBuilder
+    private var signInSection: some View {
+        if appState.loginInProgress {
+            if let code = appState.loginCode {
+                Text("Confirm code in browser: \(code)")
+            }
+            Button("Cancel Sign-In") {
+                appState.cancelLogin()
+            }
+        } else if appState.status.authenticated {
+            Button("Sign Out…") {
+                appState.logout()
+            }
+        } else {
+            if let error = appState.loginError {
+                Text("⚠️ \(error)")
+            }
+            Button("Sign In…") {
+                appState.login()
+            }
+            .disabled(!appState.binaryAvailable)
         }
     }
 

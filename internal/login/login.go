@@ -13,6 +13,7 @@ import (
 
 	"github.com/dev-kryptic/Kryptic.Encryption.Go/sealedbox"
 	"github.com/dev-kryptic/daemon/internal/api"
+	"github.com/dev-kryptic/daemon/internal/applog"
 	"github.com/dev-kryptic/daemon/internal/authstore"
 	"github.com/dev-kryptic/daemon/internal/ipc"
 	"github.com/dev-kryptic/daemon/internal/server"
@@ -44,6 +45,7 @@ func RunContext(ctx context.Context, client *api.Client, notify func(userCode, v
 	hostname, _ := os.Hostname()
 	start, err := client.DeviceStart(hostname, runtime.GOOS, server.Version, devicePublicKey)
 	if err != nil {
+		applog.Error("cli", "auth.login.start", err, "result=error")
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -53,15 +55,18 @@ func RunContext(ctx context.Context, client *api.Client, notify func(userCode, v
 	if notify != nil {
 		notify(start.UserCode, start.VerificationUrl)
 	}
+	applog.Event("cli", "auth.login.start")
 	OpenBrowser(start.VerificationUrl)
 
 	deadline := time.Now().Add(time.Duration(start.ExpiresInSeconds) * time.Second)
 	interval := time.Duration(start.PollIntervalSeconds) * time.Second
 	for {
 		if err := ctx.Err(); err != nil {
+			applog.Event("cli", "auth.login.cancel")
 			return nil, err
 		}
 		if !time.Now().Before(deadline) {
+			applog.Event("cli", "auth.login.expired")
 			return nil, fmt.Errorf("the sign-in code expired - try signing in again")
 		}
 
@@ -75,6 +80,7 @@ func RunContext(ctx context.Context, client *api.Client, notify func(userCode, v
 
 		tokens, err := client.DevicePoll(start.DeviceCode)
 		if err != nil {
+			applog.Error("cli", "auth.login.poll", err, "result=error")
 			return nil, err
 		}
 		if tokens == nil {
@@ -87,8 +93,10 @@ func RunContext(ctx context.Context, client *api.Client, notify func(userCode, v
 			DevicePrivateKey: enc.EncodeToString(keyPair.Private),
 		}
 		if err := authstore.SaveSession(session); err != nil {
+			applog.Error("cli", "auth.login.save", err)
 			return nil, err
 		}
+		applog.Event("cli", "auth.login.ok")
 		return client.Me(tokens.AccessToken)
 	}
 }
@@ -104,6 +112,7 @@ func Logout(client *api.Client) error {
 		}
 	}
 	err = authstore.Clear()
+	applog.Event("cli", "auth.logout")
 
 	// A running daemon keeps its access token and decrypted bundles in memory
 	// for up to 15 minutes. Tell it to drop them so `kryptic status` and the

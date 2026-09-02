@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dev-kryptic/daemon/internal/api"
+	"github.com/dev-kryptic/daemon/internal/applog"
 	"github.com/dev-kryptic/daemon/internal/authstore"
 	"github.com/dev-kryptic/daemon/internal/config"
 	"github.com/dev-kryptic/daemon/internal/ipc"
@@ -58,6 +59,8 @@ func main() {
 		err = ci()
 	case "flush":
 		err = flush()
+	case "logs":
+		err = runLogs()
 	case "version":
 		fmt.Println("kryptic", server.Version)
 	default:
@@ -86,6 +89,8 @@ func usage() {
   kryptic secrets get KEY --project proj_x --env development
   kryptic secrets export --project proj_x --env development   print a dotenv (decrypted locally)
   kryptic flush                 clear the daemon's secrets cache (refetch on next request)
+  kryptic logs                  print the diagnostics log path (send this file to support)
+  kryptic logs --reveal         open the diagnostics log in the file manager
   kryptic ci export --project proj_x --env production   pipeline secrets, decrypted locally
   kryptic scan [PATH]           scan files for leaked secrets (--staged, --export [FILE|DIR])
   kryptic update                update kryptic to the latest release
@@ -155,6 +160,7 @@ func runStop() error {
 	for waited := 0; waited < 50; waited++ {
 		if !pidfile.Alive(pid) {
 			pidfile.Clear()
+			applog.Event("cli", "daemon.stop")
 			fmt.Println("daemon stopped.")
 			return nil
 		}
@@ -283,19 +289,26 @@ func logoutConfirmed() bool {
 // platformAccessToken exchanges the stored refresh token for an access token,
 // persisting the rotated refresh token (and keeping the device keys) in place.
 func platformAccessToken(client *api.Client) (string, error) {
-	session, err := authstore.LoadSession()
-	if err != nil {
-		return "", err
-	}
-	tokens, err := client.Refresh(session.RefreshToken)
-	if err != nil {
-		return "", err
-	}
-	session.RefreshToken = tokens.RefreshToken
-	if err := authstore.SaveSession(session); err != nil {
-		return "", err
-	}
-	return tokens.AccessToken, nil
+	var accessToken string
+	err := authstore.WithLock(func() error {
+		session, err := authstore.LoadSession()
+		if err != nil {
+			return err
+		}
+		tokens, err := client.Refresh(session.RefreshToken)
+		if err != nil {
+			applog.Error("cli", "auth.refresh", err, "result=error")
+			return err
+		}
+		session.RefreshToken = tokens.RefreshToken
+		if err := authstore.SaveSession(session); err != nil {
+			applog.Error("cli", "auth.save", err, "result=error")
+			return err
+		}
+		accessToken = tokens.AccessToken
+		return nil
+	})
+	return accessToken, err
 }
 
 // whoami asks the platform directly (works even when the daemon isn't running).
@@ -326,8 +339,14 @@ func status() error {
 		return nil
 	}
 	if response["authenticated"] == true {
-		fmt.Printf("daemon: online (v%v) - signed in as %v @ %v\n",
-			response["daemonVersion"], response["email"], response["organization"])
+		email, _ := response["email"].(string)
+		org, _ := response["organization"].(string)
+		if email == "" {
+			fmt.Printf("daemon: online (v%v) - signed in\n", response["daemonVersion"])
+		} else {
+			fmt.Printf("daemon: online (v%v) - signed in as %s @ %s\n",
+				response["daemonVersion"], email, org)
+		}
 		if granted, ok := response["orgKeyGranted"].(bool); ok && !granted {
 			fmt.Println("organization key: not granted (an admin must approve this device under Approvals)")
 		}
@@ -338,6 +357,24 @@ func status() error {
 		apiURL = reported
 	}
 	fmt.Printf("api: %s (%s)\n", apiURL, source)
+	return nil
+}
+
+func runLogs() error {
+	reveal := false
+	for _, arg := range os.Args[2:] {
+		if arg == "--reveal" || arg == "--open" {
+			reveal = true
+		}
+	}
+	text, err := applog.StatusLine()
+	if err != nil {
+		return err
+	}
+	fmt.Println(text)
+	if reveal {
+		return applog.Reveal()
+	}
 	return nil
 }
 
@@ -370,6 +407,7 @@ func applyAPIChange(write func() error) error {
 	if err := write(); err != nil {
 		return err
 	}
+	applog.Event("cli", "config.api")
 	next, source := config.API()
 	fmt.Printf("api: %s (%s)\n", next, source)
 	if config.EnvOverrides() {

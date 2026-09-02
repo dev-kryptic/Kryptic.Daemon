@@ -16,7 +16,7 @@ enum ServerURLPresenter {
         field.frame = NSRect(x: 0, y: 0, width: 340, height: 24)
 
         let prompt = NSAlert()
-        prompt.messageText = "Server URL"
+        prompt.messageText = "Server URI"
         prompt.informativeText = "The Daemon BFF this app talks to. Changing it signs you out."
         prompt.alertStyle = .informational
         prompt.accessoryView = field

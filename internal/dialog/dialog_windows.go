@@ -29,25 +29,25 @@ const (
 )
 
 type dlg struct {
-	kind     dlgKind
-	title    string
-	message  string
-	value    string
-	theme    winui.Theme
-	bgBrush  windows.Handle
-	fieldBr  windows.Handle
-	logoBMP  windows.Handle
-	titleFnt windows.Handle
-	bodyFnt  windows.Handle
-	linkFnt  windows.Handle
-	editHWND windows.Handle
-	okHWND   windows.Handle
-	editPrev uintptr
-	ok       bool
-	closed   bool
-	accept   string
-	reject   string
-	msgH     int32
+	kind      dlgKind
+	title     string
+	message   string
+	value     string
+	theme     winui.Theme
+	bgBrush   windows.Handle
+	fieldBr   windows.Handle
+	logoBMP   windows.Handle
+	titleFnt  windows.Handle
+	bodyFnt   windows.Handle
+	buttonFnt windows.Handle
+	editHWND  windows.Handle
+	okHWND    windows.Handle
+	editPrev  uintptr
+	ok        bool
+	closed    bool
+	accept    string
+	reject    string
+	msgH      int32
 }
 
 var (
@@ -122,7 +122,7 @@ func present(d *dlg) *dlg {
 	}
 	d.titleFnt = winui.Font(16, 600, false)
 	d.bodyFnt = winui.Font(14, 400, false)
-	d.linkFnt = winui.Font(14, 600, true)
+	d.buttonFnt = winui.Font(14, 400, false)
 
 	dlgMu.Lock()
 	active = d
@@ -168,6 +168,8 @@ func present(d *dlg) *dlg {
 	winui.ProcSetForegroundWindow.Call(hwnd)
 	if d.editHWND != 0 {
 		winui.ProcSetFocus.Call(uintptr(d.editHWND))
+	} else if d.okHWND != 0 {
+		winui.ProcSetFocus.Call(uintptr(d.okHWND))
 	} else {
 		winui.ProcSetFocus.Call(hwnd)
 	}
@@ -180,7 +182,7 @@ func contentHeight(d *dlg) int32 {
 	if msgH == 0 {
 		msgH = 48
 	}
-	h := int32(24 + logoSize + 16 + msgH + 8 + 28 + 24)
+	h := int32(24 + logoSize + 16 + msgH + 16 + 32 + 24)
 	if d.kind == kindPrompt {
 		h += 36
 	}
@@ -218,17 +220,31 @@ func createBody(parent, instance windows.Handle, d *dlg) {
 			okLabel = "Continue"
 		}
 	}
-	d.okHWND = winui.CreateControl(0, "STATIC", okLabel, winui.WSChild|winui.WSVisible|winui.SSCenter|winui.SSNotify, 40, y, 160, 24, parent, instance, idOK)
-	winui.ProcSendMessageW.Call(uintptr(d.okHWND), winui.WMSetFont, uintptr(d.linkFnt), 1)
 
-	if d.kind != kindInfo {
-		cancelLabel := d.reject
-		if cancelLabel == "" {
-			cancelLabel = "Cancel"
-		}
-		cancel := winui.CreateControl(0, "STATIC", cancelLabel, winui.WSChild|winui.WSVisible|winui.SSCenter|winui.SSNotify, 220, y, 160, 24, parent, instance, idCancel)
-		winui.ProcSendMessageW.Call(uintptr(cancel), winui.WMSetFont, uintptr(d.linkFnt), 1)
+	const buttonW, buttonH, gap int32 = 128, 32, 12
+	if d.kind == kindInfo {
+		x := (dlgWidth - buttonW) / 2
+		d.okHWND = winui.CreateControl(0, "BUTTON", okLabel,
+			winui.WSChild|winui.WSVisible|winui.WSTabStop|winui.BSDefPushButton,
+			x, y, buttonW, buttonH, parent, instance, idOK)
+		winui.ProcSendMessageW.Call(uintptr(d.okHWND), winui.WMSetFont, uintptr(d.buttonFnt), 1)
+		return
 	}
+
+	cancelLabel := d.reject
+	if cancelLabel == "" {
+		cancelLabel = "Cancel"
+	}
+	total := buttonW*2 + gap
+	start := (dlgWidth - total) / 2
+	d.okHWND = winui.CreateControl(0, "BUTTON", okLabel,
+		winui.WSChild|winui.WSVisible|winui.WSTabStop|winui.BSDefPushButton,
+		start, y, buttonW, buttonH, parent, instance, idOK)
+	winui.ProcSendMessageW.Call(uintptr(d.okHWND), winui.WMSetFont, uintptr(d.buttonFnt), 1)
+	cancel := winui.CreateControl(0, "BUTTON", cancelLabel,
+		winui.WSChild|winui.WSVisible|winui.WSTabStop|winui.BSPushButton,
+		start+buttonW+gap, y, buttonW, buttonH, parent, instance, idCancel)
+	winui.ProcSendMessageW.Call(uintptr(cancel), winui.WMSetFont, uintptr(d.buttonFnt), 1)
 }
 
 func dlgWndProc(hwnd, message, wparam, lparam uintptr) uintptr {
@@ -244,15 +260,7 @@ func dlgWndProc(hwnd, message, wparam, lparam uintptr) uintptr {
 	case winui.WMEraseBkgnd:
 		return winui.FillBackground(wparam, hwnd, d.bgBrush)
 	case winui.WMCtlColorStatic:
-		color := d.theme.Secondary
-		id, _, _ := winui.ProcGetDlgCtrlID.Call(lparam)
-		switch id {
-		case idOK:
-			color = d.theme.Link
-		case idCancel:
-			color = d.theme.Tertiary
-		}
-		return winui.PaintStatic(wparam, color, d.bgBrush)
+		return winui.PaintStatic(wparam, d.theme.Secondary, d.bgBrush)
 	case winui.WMCtlColorEdit:
 		return winui.PaintEdit(wparam, d.theme.Primary, d.theme.Field, d.fieldBr)
 	case winui.WMCommand:

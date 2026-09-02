@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/dev-kryptic/daemon/internal/applog"
 	"github.com/dev-kryptic/daemon/internal/pidfile"
 )
 
@@ -58,9 +59,11 @@ func run(currentVersion string, r Reporter) error {
 	httpClient := githubClient()
 	result, err := Check(currentVersion)
 	if err != nil {
+		applog.Error("cli", "update.check", err, "result=error")
 		return err
 	}
 	if !result.Newer {
+		applog.Event("cli", "update.check", "result=current")
 		fmt.Printf("kryptic %s is already the latest version.\n", currentVersion)
 		return nil
 	}
@@ -123,6 +126,7 @@ func run(currentVersion string, r Reporter) error {
 	r(96, "Restarting…")
 	RestartDaemon()
 	r(100, "Updated")
+	applog.Event("cli", "update.apply", "result=ok")
 	fmt.Printf("updated to kryptic %s. Existing sign-in was kept.\n", result.Latest)
 	return nil
 }

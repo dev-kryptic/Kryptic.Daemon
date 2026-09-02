@@ -5,6 +5,27 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+## 0.13.13 - 2026-09-02
+
+Stay signed in through transient errors, and add a support diagnostics log.
+
+### Added
+
+- Diagnostics log at `…/kryptic/logs/kryptic.krypticlog` (2 MiB, one rotated
+  backup). Function only: no secrets, tokens, or names. `kryptic logs`,
+  `kryptic logs --reveal`, and **Reveal Diagnostics Log** in the menu bar / tray.
+
+### Changed
+
+- A stored session stays signed in through transient platform errors (timeouts,
+  5xx, a stale access token). Only a missing or rejected refresh token shows as
+  logged out.
+- Daemon and CLI serialize refresh-token rotation so they cannot spend the same
+  token.
+- Menu bar and tray menus share one layout: status, sign in/out, Operations,
+  Settings, Help & Support (GitHub, docs, diagnostics log), About, Quit.
+- Windows dialog actions are native push buttons instead of underlined text.
+
 ## 0.13.12 - 2026-09-02
 
 Offline folder scan from the tray, and clearer local-hook docs.

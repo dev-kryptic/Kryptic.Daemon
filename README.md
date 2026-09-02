@@ -38,6 +38,8 @@ kryptic whoami                # signed-in user and organization
 kryptic secrets list          # projects and environments you can pull
 kryptic secrets get KEY --project proj_x --env development
 kryptic flush                 # clear the daemon's secrets cache
+kryptic logs                  # print the diagnostics log path (send this file to support)
+kryptic logs --reveal         # open the diagnostics log in the file manager
 kryptic scan [PATH] [--staged] [--export [FILE|DIR]]  # scan for leaked secrets (gitleaks ruleset, local only)
 kryptic update                # replace this binary with the latest published build
 kryptic update --check        # report whether a newer release exists
@@ -76,9 +78,14 @@ kryptic logout
   under `/usr`), so App Center is not involved. Reinstall from
   [kryptic.dev/download](https://kryptic.dev/download) if you prefer.
 - **API**: talks to `https://daemon.kryptic.dev`. Set a different Daemon BFF with
-  `kryptic config set-api URL` (or **Server URL** in the menu). `KRYPTIC_API`
+  `kryptic config set-api URL` (or **Server URI** in the menu). `KRYPTIC_API`
   overrides the saved value, which is how local development points at a BFF on
   localhost. Changing the URL signs you out, because tokens belong to one server.
+- **Diagnostics**: `kryptic logs` prints `…/kryptic/logs/kryptic.krypticlog`.
+  That file records app function (start, token refresh, HTTP status, updates).
+  It never contains secrets, tokens, or names. It rotates at 2 MiB with one
+  backup. **Reveal Diagnostics Log** in the menu bar / tray opens it so a user
+  can send it to support.
 
 ## Build
 
@@ -89,7 +96,7 @@ go build -o kryptic ./cmd/kryptic     # ~8 MB static binary, stdlib only
 `build-cross.sh` cross-compiles the CLI for macOS/Linux/Windows and the
 `kryptic-tray` app for Linux and Windows into `dist/`. The tray app is the
 Windows/Linux counterpart of the macOS menu-bar app: the same menu (status,
-Scan…, sign in/out, cancel sign-in, refresh secrets cache, About, quit), running the
+sign in/out, Operations, Settings, Help & Support, About, quit), running the
 daemon in-process - one binary, no bundling. On Windows the daemon serves the
 named pipe `\\.\pipe\kryptic-daemon`.
 

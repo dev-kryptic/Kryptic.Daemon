@@ -50,7 +50,7 @@ type winProgress struct {
 	theme      winui.Theme
 	bgBrush    windows.Handle
 	bodyFnt    windows.Handle
-	linkFnt    windows.Handle
+	buttonFnt  windows.Handle
 }
 
 func OpenProgress(title, message string) Progress {
@@ -134,7 +134,7 @@ func (p *winProgress) run(title, message string) {
 	p.theme = winui.CurrentTheme()
 	p.bgBrush = winui.NewBrush(p.theme.Bg)
 	p.bodyFnt = winui.Font(14, 400, false)
-	p.linkFnt = winui.Font(14, 600, true)
+	p.buttonFnt = winui.Font(14, 400, false)
 
 	instance := winui.Instance()
 	small, big := winui.AppIcons()
@@ -149,7 +149,7 @@ func (p *winProgress) run(title, message string) {
 	}
 	winui.ProcRegisterClassExW.Call(uintptr(unsafe.Pointer(&class)))
 
-	clientH := int32(24 + 28 + 16 + 22 + 12 + 22 + 20 + 24 + 24)
+	clientH := int32(24 + 28 + 16 + 22 + 12 + 22 + 20 + 32 + 24)
 	style := uintptr(winui.WSCaption | winui.WSSysMenu)
 	x, y, winW, winH := winui.CenteredFrame(progressWidth, clientH, style)
 	titlePtr, _ := windows.UTF16PtrFromString(title)
@@ -195,8 +195,10 @@ func (p *winProgress) run(title, message string) {
 	p.percent = percent
 	cy += 36
 
-	cancel := winui.CreateControl(0, "STATIC", "Cancel", winui.WSChild|winui.WSVisible|winui.SSCenter|winui.SSNotify, 130, cy, 160, 24, windows.Handle(hwnd), instance, winui.IDCancel)
-	winui.ProcSendMessageW.Call(uintptr(cancel), winui.WMSetFont, uintptr(p.linkFnt), 1)
+	cancel := winui.CreateControl(0, "BUTTON", "Cancel",
+		winui.WSChild|winui.WSVisible|winui.WSTabStop|winui.BSPushButton,
+		146, cy, 128, 32, windows.Handle(hwnd), instance, winui.IDCancel)
+	winui.ProcSendMessageW.Call(uintptr(cancel), winui.WMSetFont, uintptr(p.buttonFnt), 1)
 
 	winui.ProcShowWindow.Call(hwnd, winui.SWShow)
 	winui.ProcUpdateWindow.Call(hwnd)
@@ -221,12 +223,7 @@ func progressWndProc(hwnd, message, wparam, lparam uintptr) uintptr {
 	case winui.WMEraseBkgnd:
 		return winui.FillBackground(wparam, hwnd, p.bgBrush)
 	case winui.WMCtlColorStatic:
-		color := p.theme.Secondary
-		id, _, _ := winui.ProcGetDlgCtrlID.Call(lparam)
-		if id == winui.IDCancel {
-			color = p.theme.Link
-		}
-		return winui.PaintStatic(wparam, color, p.bgBrush)
+		return winui.PaintStatic(wparam, p.theme.Secondary, p.bgBrush)
 	case winui.WMCommand:
 		if wparam&0xffff == winui.IDCancel {
 			p.signalCancel()

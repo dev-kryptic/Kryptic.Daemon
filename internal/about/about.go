@@ -17,6 +17,8 @@ const (
 	Blurb        = "Authenticate once. Every project on this machine works. No prefix commands, no .env files."
 	WebsiteLabel = "kryptic.dev"
 	WebsiteURL   = "https://kryptic.dev"
+	GitHubURL    = "https://github.com/dev-kryptic"
+	DocsURL      = "https://docs.kryptic.dev"
 )
 
 // VersionLine matches the macOS About panel, using the same ldflags-stamped
@@ -33,4 +35,12 @@ func Show() {
 
 func OpenWebsite() {
 	login.OpenBrowser(WebsiteURL)
+}
+
+func OpenGitHub() {
+	login.OpenBrowser(GitHubURL)
+}
+
+func OpenDocs() {
+	login.OpenBrowser(DocsURL)
 }

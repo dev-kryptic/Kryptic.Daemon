@@ -18,6 +18,7 @@ final class AppState: ObservableObject {
     var binaryAvailable: Bool { DaemonController.binaryURL() != nil }
 
     func start() {
+        DiagnosticsLog.event("app.start", "version=\(AppVersion.display)")
         refresh()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
@@ -52,17 +53,24 @@ final class AppState: ObservableObject {
         loginInProgress = true
         loginCode = nil
         loginError = nil
+        DiagnosticsLog.event("auth.login.start")
         controller.login { [weak self] code in
             self?.loginCode = code
         } onFinished: { [weak self] error in
             self?.loginInProgress = false
             self?.loginCode = nil
             self?.loginError = error
+            if error == nil {
+                DiagnosticsLog.event("auth.login.ok")
+            } else {
+                DiagnosticsLog.event("auth.login.error")
+            }
             self?.refresh()
         }
     }
 
     func cancelLogin() {
+        DiagnosticsLog.event("auth.login.cancel")
         controller.cancelLogin()
         loginInProgress = false
         loginCode = nil
@@ -81,6 +89,7 @@ final class AppState: ObservableObject {
         NSApplication.shared.activate(ignoringOtherApps: true)
         guard confirm.runModal() == .alertFirstButtonReturn else { return }
 
+        DiagnosticsLog.event("auth.logout")
         controller.logout { [weak self] in
             self?.refresh()
         }
@@ -127,6 +136,7 @@ final class AppState: ObservableObject {
     }
 
     func shutdown() {
+        DiagnosticsLog.event("app.stop")
         pollTimer?.invalidate()
         controller.stopDaemonIfOwned()
     }

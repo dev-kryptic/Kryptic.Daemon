@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
+	"github.com/dev-kryptic/daemon/internal/applog"
 	"github.com/dev-kryptic/daemon/internal/config"
 )
 
@@ -33,7 +35,14 @@ func NewClient() *Client {
 
 // NewClientFor points at an explicit Daemon BFF, ignoring config and env.
 func NewClientFor(baseURL string) *Client {
-	return &Client{BaseURL: baseURL, HTTP: &http.Client{Timeout: 15 * time.Second}}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.IdleConnTimeout = 30 * time.Second
+	transport.MaxIdleConns = 4
+	transport.MaxIdleConnsPerHost = 2
+	return &Client{
+		BaseURL: baseURL,
+		HTTP:    &http.Client{Timeout: 15 * time.Second, Transport: transport},
+	}
 }
 
 // NewPipelinesClient targets the Pipelines BFF, which speaks machine tokens
@@ -216,12 +225,16 @@ func (c *Client) get(path, accessToken string, out any) error {
 func (c *Client) do(request *http.Request, out any) error {
 	response, err := c.HTTP.Do(request)
 	if err != nil {
+		applog.Error("kryptic", "http", err, "method="+request.Method, "path="+request.URL.Path)
 		return err
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode < 200 || response.StatusCode > 299 {
-		return readError(response)
+		apiErr := readError(response)
+		applog.Error("kryptic", "http", apiErr, "method="+request.Method, "path="+request.URL.Path,
+			"status="+strconv.Itoa(response.StatusCode))
+		return apiErr
 	}
 	if out == nil {
 		return nil

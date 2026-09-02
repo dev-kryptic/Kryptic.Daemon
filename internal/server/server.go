@@ -12,6 +12,7 @@ import (
 	"bufio"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -22,6 +23,7 @@ import (
 	"github.com/dev-kryptic/Kryptic.Encryption.Go/envelope"
 	"github.com/dev-kryptic/Kryptic.Encryption.Go/sealedbox"
 	"github.com/dev-kryptic/daemon/internal/api"
+	"github.com/dev-kryptic/daemon/internal/applog"
 	"github.com/dev-kryptic/daemon/internal/authstore"
 	"github.com/dev-kryptic/daemon/internal/ipc"
 	"github.com/dev-kryptic/daemon/internal/notify"
@@ -51,10 +53,12 @@ type cacheEntry struct {
 type Server struct {
 	client *api.Client
 
-	mu          sync.Mutex
-	accessToken string
-	tokenExpiry time.Time
-	cache       map[string]cacheEntry // "projectId/environment" -> bundle
+	mu            sync.Mutex
+	accessToken   string
+	tokenExpiry   time.Time
+	cache         map[string]cacheEntry // "projectId/environment" -> bundle
+	lastMe        *api.Me
+	lastStatusLog time.Time
 }
 
 func New(client *api.Client) *Server {
@@ -70,6 +74,8 @@ func (s *Server) Run() error {
 	defer listener.Close()
 
 	log.Printf("kryptic daemon %s listening on %s (api: %s)", Version, ipc.Endpoint(), s.client.BaseURL)
+	applog.Event("daemon", "start", "version="+Version)
+	applog.Event("daemon", "listen")
 
 	go s.pollOrgKeyGrant()
 
@@ -97,6 +103,7 @@ func (s *Server) handle(connection net.Conn) {
 	// peer is dropped silently rather than engaged with a reply.
 	if err := ipc.CheckPeer(connection); err != nil {
 		log.Printf("denied connection: %v", err)
+		applog.Error("daemon", "ipc.denied", err)
 		return
 	}
 
@@ -153,6 +160,7 @@ func (s *Server) handleSecrets(req request) map[string]any {
 
 	token, err := s.token()
 	if err != nil {
+		applog.Error("daemon", "bundle.auth", err)
 		return errorResponse("not_authenticated", "run `kryptic login` first")
 	}
 
@@ -160,6 +168,7 @@ func (s *Server) handleSecrets(req request) map[string]any {
 	if err != nil {
 		var apiError *api.APIError
 		if ok := asAPIError(err, &apiError); ok {
+			applog.Error("daemon", "bundle.fetch", err, fmt.Sprintf("status=%d", apiError.Status))
 			switch apiError.Status {
 			case 401:
 				return errorResponse("not_authenticated", "session revoked - run `kryptic login`")
@@ -186,7 +195,8 @@ func (s *Server) handleSecrets(req request) map[string]any {
 
 	secrets, err := decryptBundle(bundle)
 	if err != nil {
-		log.Printf("bundle decrypt failed for %s/%s: %v", req.ProjectId, req.Environment, err)
+		log.Printf("bundle decrypt failed for %s/%s", req.ProjectId, req.Environment)
+		applog.Event("daemon", "bundle.decrypt", "result=error")
 		// PROTOCOL.md: no org-key grant (missing, stale, or wrong device key)
 		// is access_denied so packages skip the same way as a project 403.
 		if isGrantFailure(err) {
@@ -201,6 +211,7 @@ func (s *Server) handleSecrets(req request) map[string]any {
 	s.mu.Unlock()
 
 	log.Printf("served %d secrets for %s/%s (decrypted locally)", len(secrets), req.ProjectId, req.Environment)
+	applog.Event("daemon", "bundle.ok", fmt.Sprintf("count=%d", len(secrets)))
 	return map[string]any{"ok": true, "secrets": secrets}
 }
 
@@ -253,6 +264,7 @@ func (s *Server) ResetAuth() {
 	defer s.mu.Unlock()
 	s.accessToken = ""
 	s.tokenExpiry = time.Time{}
+	s.lastMe = nil
 	s.cache = map[string]cacheEntry{}
 }
 
@@ -262,6 +274,7 @@ func (s *Server) ResetAuth() {
 func (s *Server) handleResetAuth() map[string]any {
 	s.ResetAuth()
 	log.Printf("signed out - dropped the access token and secrets cache")
+	applog.Event("daemon", "auth.reset")
 	return map[string]any{"ok": true}
 }
 
@@ -274,6 +287,7 @@ func (s *Server) handleFlush() map[string]any {
 	s.mu.Unlock()
 
 	log.Printf("secrets cache flushed (%d bundle(s) dropped)", cleared)
+	applog.Event("daemon", "cache.flush", fmt.Sprintf("cleared=%d", cleared))
 	return map[string]any{"ok": true, "cleared": cleared}
 }
 
@@ -282,16 +296,68 @@ func (s *Server) handleStatus() map[string]any {
 		"ok": true, "authenticated": false, "daemonVersion": Version,
 		"apiUrl": s.client.BaseURL, "orgKeyGranted": true,
 	}
+
 	token, err := s.token()
 	if err != nil {
-		return base
+		hasSession := !errors.Is(err, authstore.ErrNotLoggedIn)
+		return s.statusFromFailure(base, hasSession, err)
 	}
 
 	me, err := s.client.Me(token)
+	if err != nil && isUnauthorized(err) {
+		s.invalidateAccessToken()
+		token, retryErr := s.token()
+		if retryErr != nil {
+			err = retryErr
+		} else {
+			me, err = s.client.Me(token)
+		}
+	}
 	if err != nil {
+		applog.Error("daemon", "auth.me", err, "result=error")
+		hasSession := !errors.Is(err, authstore.ErrNotLoggedIn)
+		return s.statusFromFailure(base, hasSession, err)
+	}
+
+	s.mu.Lock()
+	s.lastMe = me
+	s.mu.Unlock()
+	return statusFromMe(base, me)
+}
+
+func (s *Server) statusFromFailure(base map[string]any, hasSession bool, err error) map[string]any {
+	if !sessionReadsAsSignedIn(hasSession, err) {
+		s.logStatusThrottled("status.unauthenticated", err)
+		s.mu.Lock()
+		s.lastMe = nil
+		s.mu.Unlock()
 		return base
 	}
 
+	s.logStatusThrottled("status.degraded", err)
+	s.mu.Lock()
+	me := s.lastMe
+	s.mu.Unlock()
+	base["authenticated"] = true
+	if me != nil {
+		return statusFromMe(base, me)
+	}
+	return base
+}
+
+func (s *Server) logStatusThrottled(event string, err error) {
+	s.mu.Lock()
+	due := time.Since(s.lastStatusLog) >= 30*time.Second
+	if due {
+		s.lastStatusLog = time.Now()
+	}
+	s.mu.Unlock()
+	if due {
+		applog.Error("daemon", event, err)
+	}
+}
+
+func statusFromMe(base map[string]any, me *api.Me) map[string]any {
 	orgKeyGranted := true
 	if me.HasOrgKeyGrant != nil {
 		orgKeyGranted = *me.HasOrgKeyGrant
@@ -337,34 +403,72 @@ func (s *Server) SetBaseURL(baseURL string) {
 	s.client.BaseURL = baseURL
 }
 
-// token returns a live access token, refreshing through the stored (rotating)
-// refresh token when the current one is close to expiry.
-func (s *Server) token() (string, error) {
+func (s *Server) invalidateAccessToken() {
+	s.mu.Lock()
+	s.accessToken = ""
+	s.tokenExpiry = time.Time{}
+	s.mu.Unlock()
+}
+
+func (s *Server) cachedAccessToken() (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
 	if s.accessToken != "" && time.Until(s.tokenExpiry) > time.Minute {
-		return s.accessToken, nil
+		return s.accessToken, true
+	}
+	return "", false
+}
+
+// token returns a live access token, refreshing through the stored (rotating)
+// refresh token when the current one is close to expiry. The session lock
+// serializes this with CLI commands so two processes cannot spend the same
+// rotating token. The in-process mutex is not held during the HTTP call.
+func (s *Server) token() (string, error) {
+	if token, ok := s.cachedAccessToken(); ok {
+		return token, nil
 	}
 
-	session, err := authstore.LoadSession()
-	if err != nil {
-		return "", err
-	}
+	var token string
+	err := authstore.WithLock(func() error {
+		if cached, ok := s.cachedAccessToken(); ok {
+			token = cached
+			return nil
+		}
 
-	tokens, err := s.client.Refresh(session.RefreshToken)
-	if err != nil {
-		return "", err
-	}
-	// The refresh token rotates on every use; the device keys must survive it.
-	session.RefreshToken = tokens.RefreshToken
-	if err := authstore.SaveSession(session); err != nil {
-		return "", err
-	}
+		session, err := authstore.LoadSession()
+		if err != nil {
+			return err
+		}
 
-	s.accessToken = tokens.AccessToken
-	s.tokenExpiry = time.Now().Add(time.Duration(tokens.ExpiresInSeconds) * time.Second)
-	return s.accessToken, nil
+		tokens, err := s.client.Refresh(session.RefreshToken)
+		if isInvalidRefresh(err) {
+			// Another process may have just rotated; reload and try once.
+			session, err = authstore.LoadSession()
+			if err != nil {
+				return err
+			}
+			tokens, err = s.client.Refresh(session.RefreshToken)
+		}
+		if err != nil {
+			applog.Error("daemon", "auth.refresh", err, "result=error")
+			return err
+		}
+
+		session.RefreshToken = tokens.RefreshToken
+		if err := authstore.SaveSession(session); err != nil {
+			applog.Error("daemon", "auth.save", err, "result=error")
+			return err
+		}
+
+		s.mu.Lock()
+		s.accessToken = tokens.AccessToken
+		s.tokenExpiry = time.Now().Add(time.Duration(tokens.ExpiresInSeconds) * time.Second)
+		token = s.accessToken
+		s.mu.Unlock()
+		applog.Event("daemon", "auth.refresh", "result=ok")
+		return nil
+	})
+	return token, err
 }
 
 func isUnknownEnvironment(err *api.APIError) bool {

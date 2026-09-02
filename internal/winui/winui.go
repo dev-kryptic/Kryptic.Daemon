@@ -19,18 +19,20 @@ import (
 )
 
 const (
-	WSVisible     = 0x10000000
-	WSCaption     = 0x00C00000
-	WSSysMenu     = 0x00080000
-	WSChild       = 0x40000000
-	WSTabStop     = 0x00010000
-	WSBorder      = 0x00800000
-	SSCenter      = 0x00000001
-	SSNotify      = 0x00000100
-	SSBitmap      = 0x0000000E
-	SSEditCtrl    = 0x00002000
-	ESAutoHScroll = 0x00000080
-	SWShow        = 5
+	WSVisible       = 0x10000000
+	WSCaption       = 0x00C00000
+	WSSysMenu       = 0x00080000
+	WSChild         = 0x40000000
+	WSTabStop       = 0x00010000
+	WSBorder        = 0x00800000
+	BSPushButton    = 0x00000000
+	BSDefPushButton = 0x00000001
+	SSCenter        = 0x00000001
+	SSNotify        = 0x00000100
+	SSBitmap        = 0x0000000E
+	SSEditCtrl      = 0x00002000
+	ESAutoHScroll   = 0x00000080
+	SWShow          = 5
 
 	WMDestroy        = 0x0002
 	WMClose          = 0x0010

@@ -117,8 +117,10 @@ final class DaemonController {
         do {
             try process.run()
             daemonProcess = process
+            DiagnosticsLog.event("daemon.spawn")
         } catch {
             NSLog("kryptic: failed to start daemon: \(error)")
+            DiagnosticsLog.event("daemon.spawn", "result=error")
             onSpawnFailure?(error.localizedDescription)
             return
         }
@@ -136,6 +138,7 @@ final class DaemonController {
             if text.isEmpty {
                 text = "kryptic start exited (\(running.terminationStatus))"
             }
+            DiagnosticsLog.event("daemon.spawn", "result=error")
             onSpawnFailure?(text)
         }
     }

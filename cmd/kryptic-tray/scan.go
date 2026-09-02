@@ -22,7 +22,7 @@ func runFolderScan(item *systray.MenuItem) {
 	defer func() {
 		folderScanBusy.Store(false)
 		item.Enable()
-		item.SetTitle("Scan…")
+		item.SetTitle("Scan for secrets")
 	}()
 
 	folder, ok := dialog.PickFolder("Scan folder")

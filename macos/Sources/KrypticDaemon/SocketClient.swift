@@ -47,7 +47,7 @@ enum SocketClient {
         guard fd >= 0 else { return nil }
         defer { close(fd) }
 
-        var timeout = timeval(tv_sec: 2, tv_usec: 0)
+        var timeout = timeval(tv_sec: 10, tv_usec: 0)
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
 
