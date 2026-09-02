@@ -8,7 +8,7 @@ final class AppState: ObservableObject {
     @Published var loginInProgress = false
     @Published var loginError: String?
     @Published var spawnError: String?
-    @Published var updateTitle = "Check for Updates…"
+    @Published var updateTitle = "Check for Updates"
     @Published var scanInProgress = false
     @Published var displayAPI = ConfigStore.displayAPI
 
@@ -111,7 +111,7 @@ final class AppState: ObservableObject {
     func checkForUpdates() {
         guard let binary = DaemonController.binaryURL() else { return }
         UpdatePresenter.check(binary: binary, currentVersion: AppVersion.display)
-        updateTitle = "Check for Updates…"
+        updateTitle = "Check for Updates"
     }
 
     func changeServerURL() {

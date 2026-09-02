@@ -5,6 +5,10 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+### Changed
+
+- Menu **Check for Updates** no longer uses an ellipsis.
+
 ## 0.13.14 - 2026-09-03
 
 Windows dialogs use Kryptic primary and ghost buttons, not Win32 chrome.

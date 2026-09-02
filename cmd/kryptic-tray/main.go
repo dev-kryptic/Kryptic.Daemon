@@ -89,7 +89,7 @@ func onReady() {
 	scanItem := operations.AddSubMenuItem("Scan for secrets", "Scan a folder for leaked secrets (offline, no sign-in)")
 
 	settings := systray.AddMenuItem("Settings", "")
-	updateItem := settings.AddSubMenuItem("Check for Updates…", "Install the latest Kryptic release")
+	updateItem := settings.AddSubMenuItem("Check for Updates", "Install the latest Kryptic release")
 	serverItem := settings.AddSubMenuItem("Server URI", "Point the daemon at a different Kryptic server")
 
 	help := systray.AddMenuItem("Help & Support", "")
@@ -341,7 +341,7 @@ func watchForUpdates(item *systray.MenuItem) {
 func runUpdateFlow(item *systray.MenuItem) {
 	item.SetTitle("Checking for Updates…")
 	result, err := update.Check(server.Version)
-	item.SetTitle("Check for Updates…")
+	item.SetTitle("Check for Updates")
 	if err != nil {
 		dialog.Info("Kryptic", "Could not check for updates: "+err.Error())
 		return
@@ -370,7 +370,7 @@ func runUpdateFlow(item *systray.MenuItem) {
 	if progress != nil {
 		progress.Close()
 	}
-	item.SetTitle("Check for Updates…")
+	item.SetTitle("Check for Updates")
 	if err != nil {
 		dialog.Info("Kryptic", "Update failed: "+err.Error())
 		item.SetTitle("Update Available…")
