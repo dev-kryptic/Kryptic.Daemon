@@ -5,6 +5,15 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+## 0.13.14 - 2026-09-03
+
+Windows dialogs use Kryptic primary and ghost buttons, not Win32 chrome.
+
+### Changed
+
+- Windows dialog and progress actions are owner-drawn Kryptic buttons
+  (accent primary, bordered ghost) instead of the default Win32 chrome.
+
 ## 0.13.13 - 2026-09-02
 
 Stay signed in through transient errors, and add a support diagnostics log.

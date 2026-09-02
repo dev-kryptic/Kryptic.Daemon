@@ -122,7 +122,7 @@ func present(d *dlg) *dlg {
 	}
 	d.titleFnt = winui.Font(16, 600, false)
 	d.bodyFnt = winui.Font(14, 400, false)
-	d.buttonFnt = winui.Font(14, 400, false)
+	d.buttonFnt = winui.Font(14, 600, false)
 
 	dlgMu.Lock()
 	active = d
@@ -182,7 +182,7 @@ func contentHeight(d *dlg) int32 {
 	if msgH == 0 {
 		msgH = 48
 	}
-	h := int32(24 + logoSize + 16 + msgH + 16 + 32 + 24)
+	h := int32(24 + logoSize + 16 + msgH + 16 + 36 + 24)
 	if d.kind == kindPrompt {
 		h += 36
 	}
@@ -221,13 +221,10 @@ func createBody(parent, instance windows.Handle, d *dlg) {
 		}
 	}
 
-	const buttonW, buttonH, gap int32 = 128, 32, 12
+	const buttonW, buttonH, gap int32 = 128, 36, 12
 	if d.kind == kindInfo {
 		x := (dlgWidth - buttonW) / 2
-		d.okHWND = winui.CreateControl(0, "BUTTON", okLabel,
-			winui.WSChild|winui.WSVisible|winui.WSTabStop|winui.BSDefPushButton,
-			x, y, buttonW, buttonH, parent, instance, idOK)
-		winui.ProcSendMessageW.Call(uintptr(d.okHWND), winui.WMSetFont, uintptr(d.buttonFnt), 1)
+		d.okHWND = winui.CreateButton(parent, instance, idOK, x, y, buttonW, buttonH, okLabel, winui.ButtonPrimary, d.buttonFnt)
 		return
 	}
 
@@ -237,14 +234,8 @@ func createBody(parent, instance windows.Handle, d *dlg) {
 	}
 	total := buttonW*2 + gap
 	start := (dlgWidth - total) / 2
-	d.okHWND = winui.CreateControl(0, "BUTTON", okLabel,
-		winui.WSChild|winui.WSVisible|winui.WSTabStop|winui.BSDefPushButton,
-		start, y, buttonW, buttonH, parent, instance, idOK)
-	winui.ProcSendMessageW.Call(uintptr(d.okHWND), winui.WMSetFont, uintptr(d.buttonFnt), 1)
-	cancel := winui.CreateControl(0, "BUTTON", cancelLabel,
-		winui.WSChild|winui.WSVisible|winui.WSTabStop|winui.BSPushButton,
-		start+buttonW+gap, y, buttonW, buttonH, parent, instance, idCancel)
-	winui.ProcSendMessageW.Call(uintptr(cancel), winui.WMSetFont, uintptr(d.buttonFnt), 1)
+	d.okHWND = winui.CreateButton(parent, instance, idOK, start, y, buttonW, buttonH, okLabel, winui.ButtonPrimary, d.buttonFnt)
+	winui.CreateButton(parent, instance, idCancel, start+buttonW+gap, y, buttonW, buttonH, cancelLabel, winui.ButtonGhost, d.buttonFnt)
 }
 
 func dlgWndProc(hwnd, message, wparam, lparam uintptr) uintptr {
@@ -259,6 +250,10 @@ func dlgWndProc(hwnd, message, wparam, lparam uintptr) uintptr {
 	switch message {
 	case winui.WMEraseBkgnd:
 		return winui.FillBackground(wparam, hwnd, d.bgBrush)
+	case winui.WMDrawItem:
+		return winui.HandleDrawItem(lparam, d.theme, d.buttonFnt)
+	case winui.WMCtlColorBtn:
+		return uintptr(d.bgBrush)
 	case winui.WMCtlColorStatic:
 		return winui.PaintStatic(wparam, d.theme.Secondary, d.bgBrush)
 	case winui.WMCtlColorEdit:

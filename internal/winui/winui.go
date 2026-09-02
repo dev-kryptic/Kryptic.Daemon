@@ -27,6 +27,7 @@ const (
 	WSBorder        = 0x00800000
 	BSPushButton    = 0x00000000
 	BSDefPushButton = 0x00000001
+	BSOwnerDraw     = 0x0000000B
 	SSCenter        = 0x00000001
 	SSNotify        = 0x00000100
 	SSBitmap        = 0x0000000E
@@ -37,9 +38,13 @@ const (
 	WMDestroy        = 0x0002
 	WMClose          = 0x0010
 	WMEraseBkgnd     = 0x0014
+	WMDrawItem       = 0x002B
 	WMSetFont        = 0x0030
+	WMMouseMove      = 0x0200
+	WMMouseLeave     = 0x02A3
 	WMCommand        = 0x0111
 	WMSysCommand     = 0x0112
+	WMCtlColorBtn    = 0x0135
 	WMCtlColorEdit   = 0x0133
 	WMCtlColorStatic = 0x0138
 	WMSetImage       = 0x0172
@@ -67,6 +72,19 @@ const (
 
 	dwmwaUseImmersiveDarkMode = 20
 	GWLWNDPROC                = ^uintptr(3)
+	GWLPUserData              = ^uintptr(20)
+
+	ButtonPrimary uintptr = 1
+	ButtonGhost   uintptr = 2
+
+	odsSelected = 0x0001
+	odsFocus    = 0x0010
+	psSolid     = 0
+	dtCenter    = 0x00000001
+	dtVCenter   = 0x00000004
+	dtSingle    = 0x00000020
+	tmeLeave    = 0x00000002
+	buttonRadius = 20
 )
 
 var (
@@ -95,7 +113,11 @@ var (
 	ProcFillRect             = User32.NewProc("FillRect")
 	ProcAdjustWindowRect     = User32.NewProc("AdjustWindowRect")
 	ProcSetWindowLongPtrW    = User32.NewProc("SetWindowLongPtrW")
+	ProcGetWindowLongPtrW    = User32.NewProc("GetWindowLongPtrW")
 	ProcCallWindowProcW      = User32.NewProc("CallWindowProcW")
+	ProcInvalidateRect       = User32.NewProc("InvalidateRect")
+	ProcTrackMouseEvent      = User32.NewProc("TrackMouseEvent")
+	ProcDrawTextW            = User32.NewProc("DrawTextW")
 	ProcGetWindowTextW       = User32.NewProc("GetWindowTextW")
 	ProcGetWindowTextLengthW = User32.NewProc("GetWindowTextLengthW")
 	ProcSetFocus             = User32.NewProc("SetFocus")
@@ -106,6 +128,9 @@ var (
 
 	ProcGetModuleHandleW   = Kernel32.NewProc("GetModuleHandleW")
 	ProcCreateSolidBrush   = Gdi32.NewProc("CreateSolidBrush")
+	ProcCreatePen          = Gdi32.NewProc("CreatePen")
+	ProcSelectObject       = Gdi32.NewProc("SelectObject")
+	ProcRoundRect          = Gdi32.NewProc("RoundRect")
 	ProcCreateFontW        = Gdi32.NewProc("CreateFontW")
 	ProcCreateDIBSection   = Gdi32.NewProc("CreateDIBSection")
 	ProcDeleteObject       = Gdi32.NewProc("DeleteObject")
@@ -121,35 +146,59 @@ var (
 
 // Theme is COLORREF (0x00BBGGRR), matching the About panel.
 type Theme struct {
-	Dark      bool
-	Bg        uint32
-	Primary   uint32
-	Secondary uint32
-	Tertiary  uint32
-	Link      uint32
-	Field     uint32
+	Dark       bool
+	Bg         uint32
+	Primary    uint32
+	Secondary  uint32
+	Tertiary   uint32
+	Link       uint32
+	Field      uint32
+	Accent     uint32
+	AccentHot  uint32
+	AccentDown uint32
+	Ink        uint32
+	Surface    uint32
+	SurfaceHot uint32
+	Border     uint32
+	BorderHot  uint32
 }
 
 func CurrentTheme() Theme {
 	if appsUseLightTheme() {
 		return Theme{
-			Dark:      false,
-			Bg:        0x00FFFFFF,
-			Primary:   0x001A1A1A,
-			Secondary: 0x0080726B,
-			Tertiary:  0x00AFA39C,
-			Link:      0x00C06700,
-			Field:     0x00FFFFFF,
+			Dark:       false,
+			Bg:         0x00FFFFFF,
+			Primary:    0x001A1A1A,
+			Secondary:  0x0080726B,
+			Tertiary:   0x00AFA39C,
+			Link:       0x00C06700,
+			Field:      0x00FFFFFF,
+			Accent:     0x0069B016, // #16b069
+			AccentHot:  0x0078C025,
+			AccentDown: 0x00579A0C, // #0c9a57
+			Ink:        0x000C1404, // #04140c
+			Surface:    0x00FFFFFF,
+			SurfaceHot: 0x00F4F6F3,
+			Border:     0x00E0E6DD, // #dde6e0
+			BorderHot:  0x00C8D0C5,
 		}
 	}
 	return Theme{
-		Dark:      true,
-		Bg:        0x00202020,
-		Primary:   0x00F0F0F0,
-		Secondary: 0x00B8ADA6,
-		Tertiary:  0x008E827A,
-		Link:      0x00FFC24C,
-		Field:     0x002C2C2C,
+		Dark:       true,
+		Bg:         0x00202020,
+		Primary:    0x00F0F0F0,
+		Secondary:  0x00B8ADA6,
+		Tertiary:   0x008E827A,
+		Link:       0x00FFC24C,
+		Field:      0x002C2C2C,
+		Accent:     0x00A6F25F, // #5ff2a6
+		AccentHot:  0x00B5F578,
+		AccentDown: 0x0086D43B, // #3bd486
+		Ink:        0x000C1404, // #04140c
+		Surface:    0x002C2C2C,
+		SurfaceHot: 0x00353535,
+		Border:     0x003A3A3A,
+		BorderHot:  0x00555555,
 	}
 }
 
