@@ -44,6 +44,7 @@ func TestParseArgs(t *testing.T) {
 			args: []string{"--staged", "--export"},
 			want: Options{Root: ".", Staged: true, Export: true},
 		},
+		{name: "progress", args: []string{"--progress"}, want: Options{Root: ".", Progress: true}},
 		{name: "unknown flag", args: []string{"--nope"}, wantErr: true},
 	}
 

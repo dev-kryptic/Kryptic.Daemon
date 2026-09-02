@@ -2,6 +2,7 @@ package scan
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 )
@@ -35,6 +36,24 @@ func TerminalProgress() Progress {
 		if percent >= 100 {
 			fmt.Fprintln(os.Stderr)
 		}
+	}
+}
+
+// LineProgress writes one "percent<TAB>message" line per update. The menu-bar
+// app uses `--progress` so it can drive a determinate bar when stderr is a
+// pipe (not a TTY). Hooks and CI omit the flag and stay quiet.
+func LineProgress(w io.Writer) Progress {
+	if w == nil {
+		return nil
+	}
+	return func(percent int, message string) {
+		if percent < 0 {
+			percent = 0
+		}
+		if percent > 100 {
+			percent = 100
+		}
+		fmt.Fprintf(w, "%d\t%s\n", percent, strings.ReplaceAll(message, "\n", " "))
 	}
 }
 

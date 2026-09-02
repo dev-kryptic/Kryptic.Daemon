@@ -4,7 +4,7 @@
 // An externally managed daemon (systemd, `kryptic start`) is detected and left
 // alone; the tray then acts as a remote control for it.
 //
-// The menu is a 1:1 match of the macOS MenuBarExtra: status, sign in/out,
+// The menu is a 1:1 match of the macOS MenuBarExtra: status, Scan…, sign in/out,
 // cancel sign-in, refresh cache, Check for Updates, Server URL, About, quit.
 package main
 
@@ -71,6 +71,8 @@ func onReady() {
 	orgItem.Disable()
 	orgItem.Hide()
 
+	systray.AddSeparator()
+	scanItem := systray.AddMenuItem("Scan…", "Scan a folder for leaked secrets (offline, no sign-in)")
 	systray.AddSeparator()
 	codeItem := systray.AddMenuItem("", "")
 	codeItem.Disable()
@@ -163,6 +165,9 @@ func onReady() {
 			select {
 			case <-ticker.C:
 				refresh()
+
+			case <-scanItem.ClickedCh:
+				go runFolderScan(scanItem)
 
 			case <-signInItem.ClickedCh:
 				loginMu.Lock()

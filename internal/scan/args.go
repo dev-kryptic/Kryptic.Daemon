@@ -11,6 +11,7 @@ type Options struct {
 	Staged     bool
 	Export     bool
 	ExportPath string
+	Progress   bool
 }
 
 // ParseArgs reads `kryptic scan` flags. `--export` with no path writes the
@@ -22,6 +23,8 @@ func ParseArgs(args []string) (Options, error) {
 		switch {
 		case arg == "--staged":
 			opts.Staged = true
+		case arg == "--progress":
+			opts.Progress = true
 		case arg == "--export":
 			opts.Export = true
 			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
@@ -32,7 +35,7 @@ func ParseArgs(args []string) (Options, error) {
 			opts.Export = true
 			opts.ExportPath = strings.TrimPrefix(arg, "--export=")
 		case strings.HasPrefix(arg, "-"):
-			return Options{}, fmt.Errorf("unknown flag %s (usage: kryptic scan [PATH] [--staged] [--export [FILE|DIR]])", arg)
+			return Options{}, fmt.Errorf("unknown flag %s (usage: kryptic scan [PATH] [--staged] [--export [FILE|DIR]] [--progress])", arg)
 		default:
 			opts.Root = arg
 		}

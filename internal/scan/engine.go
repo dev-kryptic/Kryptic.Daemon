@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"os"
@@ -58,14 +59,30 @@ func (c *Config) ScanPath(root string) ([]Finding, error) {
 // ScanPathWithProgress is ScanPath with a 0-100% progress callback. Files are
 // collected first so the percentage is of real work, not of an unknown walk.
 func (c *Config) ScanPathWithProgress(root string, progress Progress) (PathResult, error) {
+	return c.ScanPathWithContext(context.Background(), root, progress)
+}
+
+// ScanPathWithContext is ScanPathWithProgress with cancellation. The walk and
+// per-file scan stop at the next checkpoint when ctx is cancelled. A nil ctx
+// is treated as Background.
+func (c *Config) ScanPathWithContext(ctx context.Context, root string, progress Progress) (PathResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	report := func(percent int, message string) {
 		if progress != nil {
 			progress(percent, message)
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return PathResult{}, err
+	}
 	report(0, "Discovering files...")
+	if err := ctx.Err(); err != nil {
+		return PathResult{}, err
+	}
 
-	files, err := c.collectScanFiles(root)
+	files, err := c.collectScanFiles(ctx, root)
 	if err != nil {
 		return PathResult{}, err
 	}
@@ -78,6 +95,9 @@ func (c *Config) ScanPathWithProgress(root string, progress Progress) (PathResul
 
 	var findings []Finding
 	for i, file := range files {
+		if err := ctx.Err(); err != nil {
+			return PathResult{}, err
+		}
 		report((i*100)/total, file.rel)
 		fileFindings, scanErr := c.scanFile(file.abs, file.rel)
 		if scanErr != nil {
@@ -85,13 +105,19 @@ func (c *Config) ScanPathWithProgress(root string, progress Progress) (PathResul
 		}
 		findings = append(findings, fileFindings...)
 	}
+	if err := ctx.Err(); err != nil {
+		return PathResult{}, err
+	}
 	report(100, "Done")
 	return PathResult{Findings: findings, Files: total}, nil
 }
 
-func (c *Config) collectScanFiles(root string) ([]scanFile, error) {
+func (c *Config) collectScanFiles(ctx context.Context, root string) ([]scanFile, error) {
 	var files []scanFile
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err != nil {
 			return err
 		}

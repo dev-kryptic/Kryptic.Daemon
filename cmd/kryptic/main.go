@@ -177,6 +177,9 @@ func runScan() error {
 	}
 
 	progress := scan.TerminalProgress()
+	if opts.Progress {
+		progress = scan.LineProgress(os.Stderr)
+	}
 	var findings []scan.Finding
 	files := 0
 	target := opts.Root

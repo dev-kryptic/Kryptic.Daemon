@@ -63,6 +63,13 @@ private struct MenuBarContent: View {
 
             Divider()
 
+            Button("Scan…") {
+                appState.scanFolder()
+            }
+            .disabled(!appState.binaryAvailable || appState.scanInProgress)
+
+            Divider()
+
             if appState.loginInProgress {
                 if let code = appState.loginCode {
                     Text("Confirm code in browser: \(code)")

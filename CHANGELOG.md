@@ -5,6 +5,25 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+## 0.13.12 - 2026-09-02
+
+Offline folder scan from the tray, and clearer local-hook docs.
+
+### Added
+
+- **Scan…** in the Windows/Linux tray and the macOS menu bar. Pick a folder,
+  run the embedded gitleaks engine fully offline (no sign-in, no network),
+  watch a 0-100% progress bar, and cancel to stop the walk. On completion,
+  `kryptic-scan-report.md` is written at the folder you chose, with a result
+  dialog and **Open Report**. A cancelled scan does not leave a finished report.
+
+### Changed
+
+- `kryptic scan` walks honor `context` cancellation so the tray can stop
+  promptly. TTY progress and quiet-when-not-a-TTY (hooks, CI) are unchanged.
+- Docs describe the pre-commit setup as a local git hook on the developer
+  machine. Staged files never leave the laptop.
+
 ## 0.13.11 - 2026-08-31
 
 Scan progress on a TTY, and a branded Markdown export.

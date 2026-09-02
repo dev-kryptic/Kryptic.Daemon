@@ -45,6 +45,11 @@ const (
 	WMSetIcon        = 0x0080
 	WMGetText        = 0x000D
 	WMGetTextLength  = 0x000E
+	WMUser           = 0x0400
+	WMApp            = 0x8000
+	PBMSetPos        = WMUser + 2
+	PBMSetRange32    = WMUser + 6
+	PBSSmooth        = 1
 
 	IconSmall   = 0
 	IconBig     = 1
@@ -94,6 +99,8 @@ var (
 	ProcSetFocus             = User32.NewProc("SetFocus")
 	ProcGetParent            = User32.NewProc("GetParent")
 	ProcGetDlgCtrlID         = User32.NewProc("GetDlgCtrlID")
+	ProcSetWindowTextW       = User32.NewProc("SetWindowTextW")
+	ProcPostMessageW         = User32.NewProc("PostMessageW")
 
 	ProcGetModuleHandleW   = Kernel32.NewProc("GetModuleHandleW")
 	ProcCreateSolidBrush   = Gdi32.NewProc("CreateSolidBrush")

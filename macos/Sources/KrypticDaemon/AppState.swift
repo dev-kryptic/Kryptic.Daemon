@@ -9,6 +9,7 @@ final class AppState: ObservableObject {
     @Published var loginError: String?
     @Published var spawnError: String?
     @Published var updateTitle = "Check for Updates…"
+    @Published var scanInProgress = false
     @Published var displayAPI = ConfigStore.displayAPI
 
     let controller = DaemonController()
@@ -88,6 +89,13 @@ final class AppState: ObservableObject {
     func refreshSecretsCache() {
         Task.detached {
             _ = SocketClient.flushSecretsCache()
+        }
+    }
+
+    func scanFolder() {
+        guard let binary = DaemonController.binaryURL() else { return }
+        ScanPresenter.start(binary: binary) { [weak self] busy in
+            self?.scanInProgress = busy
         }
     }
 

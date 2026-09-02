@@ -25,6 +25,7 @@ const (
 	kindInfo dlgKind = iota
 	kindConfirm
 	kindPrompt
+	kindAsk
 )
 
 type dlg struct {
@@ -44,6 +45,9 @@ type dlg struct {
 	editPrev uintptr
 	ok       bool
 	closed   bool
+	accept   string
+	reject   string
+	msgH     int32
 }
 
 var (
@@ -54,14 +58,17 @@ var (
 	active   *dlg
 )
 
-func OpenProgress(string, string) Progress { return nopProgress{} }
-
 func Info(title, message string) {
 	run(kindInfo, title, message, "")
 }
 
 func Confirm(title, message string) bool {
 	d := run(kindConfirm, title, message, "")
+	return d.ok
+}
+
+func Ask(title, message, accept, reject string) bool {
+	d := runAsk(title, message, accept, reject)
 	return d.ok
 }
 
@@ -74,16 +81,40 @@ func Prompt(title, message, defaultValue string) (string, bool) {
 }
 
 func run(kind dlgKind, title, message, defaultValue string) *dlg {
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
 	d := &dlg{
 		kind:    kind,
 		title:   title,
 		message: message,
 		value:   defaultValue,
 		theme:   winui.CurrentTheme(),
+		msgH:    48,
 	}
+	return present(d)
+}
+
+func runAsk(title, message, accept, reject string) *dlg {
+	if accept == "" {
+		accept = "OK"
+	}
+	if reject == "" {
+		reject = "Close"
+	}
+	d := &dlg{
+		kind:    kindAsk,
+		title:   title,
+		message: message,
+		theme:   winui.CurrentTheme(),
+		accept:  accept,
+		reject:  reject,
+		msgH:    120,
+	}
+	return present(d)
+}
+
+func present(d *dlg) *dlg {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	d.bgBrush = winui.NewBrush(d.theme.Bg)
 	d.fieldBr = winui.NewBrush(d.theme.Field)
 	if bmp, err := winui.LogoBitmap(logoSize, d.theme.Bg); err == nil {
@@ -115,10 +146,10 @@ func run(kind dlgKind, title, message, defaultValue string) *dlg {
 	}
 	winui.ProcRegisterClassExW.Call(uintptr(unsafe.Pointer(&class)))
 
-	clientH := contentHeight(kind)
+	clientH := contentHeight(d)
 	style := uintptr(winui.WSCaption | winui.WSSysMenu)
 	x, y, winW, winH := winui.CenteredFrame(dlgWidth, clientH, style)
-	titlePtr, _ := windows.UTF16PtrFromString(title)
+	titlePtr, _ := windows.UTF16PtrFromString(d.title)
 	hwnd, _, _ := winui.ProcCreateWindowExW.Call(
 		0,
 		uintptr(unsafe.Pointer(dlgClass)),
@@ -144,9 +175,13 @@ func run(kind dlgKind, title, message, defaultValue string) *dlg {
 	return d
 }
 
-func contentHeight(kind dlgKind) int32 {
-	h := int32(24 + logoSize + 16 + 48 + 16 + 28 + 24)
-	if kind == kindPrompt {
+func contentHeight(d *dlg) int32 {
+	msgH := d.msgH
+	if msgH == 0 {
+		msgH = 48
+	}
+	h := int32(24 + logoSize + 16 + msgH + 8 + 28 + 24)
+	if d.kind == kindPrompt {
 		h += 36
 	}
 	return h
@@ -161,9 +196,13 @@ func createBody(parent, instance windows.Handle, d *dlg) {
 		y += logoSize + 16
 	}
 
-	msg := winui.CreateControl(0, "STATIC", d.message, winui.WSChild|winui.WSVisible|winui.SSCenter|winui.SSEditCtrl, 28, y, dlgWidth-56, 48, parent, instance, 0)
+	msgH := d.msgH
+	if msgH == 0 {
+		msgH = 48
+	}
+	msg := winui.CreateControl(0, "STATIC", d.message, winui.WSChild|winui.WSVisible|winui.SSCenter|winui.SSEditCtrl, 28, y, dlgWidth-56, msgH, parent, instance, 0)
 	winui.ProcSendMessageW.Call(uintptr(msg), winui.WMSetFont, uintptr(d.bodyFnt), 1)
-	y += 56
+	y += msgH + 8
 
 	if d.kind == kindPrompt {
 		d.editHWND = winui.CreateControl(0x00000200, "EDIT", d.value, winui.WSChild|winui.WSVisible|winui.WSTabStop|winui.ESAutoHScroll, 28, y, dlgWidth-56, 28, parent, instance, idEdit)
@@ -172,15 +211,22 @@ func createBody(parent, instance windows.Handle, d *dlg) {
 		y += 40
 	}
 
-	okLabel := "OK"
-	if d.kind == kindConfirm {
-		okLabel = "Continue"
+	okLabel := d.accept
+	if okLabel == "" {
+		okLabel = "OK"
+		if d.kind == kindConfirm {
+			okLabel = "Continue"
+		}
 	}
 	d.okHWND = winui.CreateControl(0, "STATIC", okLabel, winui.WSChild|winui.WSVisible|winui.SSCenter|winui.SSNotify, 40, y, 160, 24, parent, instance, idOK)
 	winui.ProcSendMessageW.Call(uintptr(d.okHWND), winui.WMSetFont, uintptr(d.linkFnt), 1)
 
 	if d.kind != kindInfo {
-		cancel := winui.CreateControl(0, "STATIC", "Cancel", winui.WSChild|winui.WSVisible|winui.SSCenter|winui.SSNotify, 220, y, 160, 24, parent, instance, idCancel)
+		cancelLabel := d.reject
+		if cancelLabel == "" {
+			cancelLabel = "Cancel"
+		}
+		cancel := winui.CreateControl(0, "STATIC", cancelLabel, winui.WSChild|winui.WSVisible|winui.SSCenter|winui.SSNotify, 220, y, 160, 24, parent, instance, idCancel)
 		winui.ProcSendMessageW.Call(uintptr(cancel), winui.WMSetFont, uintptr(d.linkFnt), 1)
 	}
 }

@@ -54,10 +54,15 @@ kryptic logout
   libsecret on Linux (`secret-tool`), with a 0600 file fallback when no store is
   available. Access tokens (15 min) stay in memory.
 - **Scanning**: `kryptic scan` runs the gitleaks default ruleset (222 rules) fully
-  locally - nothing leaves the machine. A 0-100% progress bar is shown on a TTY.
-  Findings are redacted in the output and a non-zero exit code makes it usable as
-  a pre-commit or CI gate. `kryptic scan --export` writes a Markdown report
-  (`kryptic-scan-report.md` in the current directory when no path is given).
+  locally - nothing leaves the machine. A 0-100% progress bar is shown on a TTY
+  (hooks and CI stay quiet). Findings are redacted and a non-zero exit code
+  makes it a local git hook or CI gate (`exec kryptic scan --staged` in
+  `.git/hooks/pre-commit`). Staged files never leave the laptop. `kryptic scan
+  --export` writes a Markdown report (`kryptic-scan-report.md` in the current
+  directory when no path is given). **Scan…** in the Windows/Linux tray and the
+  macOS menu bar picks a folder, shows determinate progress, and writes that
+  report at the folder you chose. It works signed out, with no network.
+
 - **Serving**: a unix socket (`/tmp/kryptic-daemon.sock`, 0600, override with
   `KRYPTIC_SOCKET_PATH`) speaking [PROTOCOL.md](PROTOCOL.md) v1. Every connection
   is authenticated by the caller's OS credentials (`LOCAL_PEERCRED`/`SO_PEERCRED`
@@ -84,7 +89,7 @@ go build -o kryptic ./cmd/kryptic     # ~8 MB static binary, stdlib only
 `build-cross.sh` cross-compiles the CLI for macOS/Linux/Windows and the
 `kryptic-tray` app for Linux and Windows into `dist/`. The tray app is the
 Windows/Linux counterpart of the macOS menu-bar app: the same menu (status,
-sign in/out, cancel sign-in, refresh secrets cache, About, quit), running the
+Scan…, sign in/out, cancel sign-in, refresh secrets cache, About, quit), running the
 daemon in-process - one binary, no bundling. On Windows the daemon serves the
 named pipe `\\.\pipe\kryptic-daemon`.
 
