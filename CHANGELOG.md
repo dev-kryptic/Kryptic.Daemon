@@ -5,6 +5,10 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+## 1.0.0 - 2026-09-05
+
+First production release.
+
 ### Changed
 
 - Menu **Check for Updates** no longer uses an ellipsis.
