@@ -814,24 +814,7 @@ jobs:
           NOTES_FILE: ${{ runner.temp }}/release-notes.md
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import os, pathlib, re, sys
-
-          version = os.environ["VERSION"]
-          notes_file = pathlib.Path(os.environ["NOTES_FILE"])
-          lines = pathlib.Path("CHANGELOG.md").read_text().splitlines()
-          pattern = re.compile(rf"^## \[?{re.escape(version)}\]?(?:\s|$)")
-          start = next((i for i, line in enumerate(lines) if pattern.match(line)), None)
-          if start is None:
-              sys.exit(f"CHANGELOG.md has no ## {version} section")
-          end = next(
-              (j for j in range(start + 1, len(lines)) if lines[j].startswith("## ")),
-              len(lines),
-          )
-          body = "\n".join(lines[start:end]).strip() + "\n"
-          notes_file.write_text(body)
-          print(body)
-          PY
+          python3 .github/scripts/release-notes-from-changelog.py
           echo "file=$NOTES_FILE" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
