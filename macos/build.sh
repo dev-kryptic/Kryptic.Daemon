@@ -3,7 +3,8 @@ set -euo pipefail
 
 # Usage: build.sh [--debug]
 #   --debug builds a debug configuration app whose daemon targets the local
-#   Daemon BFF (http://localhost:5211) instead of the hosted platform.
+#   Daemon BFF (http://localhost:5237, the IDE launchSettings port) instead
+#   of the hosted platform. Compose publishes that BFF on :5211.
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="Kryptic"

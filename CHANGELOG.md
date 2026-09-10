@@ -5,6 +5,17 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+### Fixed
+
+- Debug builds and local docs point the daemon at the IDE Daemon BFF
+  (`http://localhost:5237`). Compose still publishes that BFF on `:5211`.
+
+## 1.1.2 - 2026-09-11
+
+### Changed
+
+- Update code signing certificate.
+
 ## 1.1.1 - 2026-09-10
 
 ### Changed

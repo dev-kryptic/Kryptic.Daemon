@@ -111,10 +111,11 @@ Snap Store listing is in App Center and the GitHub Pages deploy path is ready.
 without root.
 
 `macos/build.sh` packages the menu-bar app with this binary bundled inside.
-`macos/build.sh --debug` builds it pointed at a local platform (`http://localhost:5211`,
-the docker-compose Daemon BFF) so sign-in opens the local management client; an explicit
-`KRYPTIC_API` env var overrides either default (e.g. `http://localhost:5237` for a BFF
-run from the IDE).
+`macos/build.sh --debug` builds it pointed at the IDE Daemon BFF
+(`http://localhost:5237`) so sign-in opens the local management client.
+Compose publishes that BFF on `http://localhost:5211`. `KRYPTIC_API`
+overrides either default (`kryptic config set-api` writes it into the
+daemon config).
 
 `macos/` contains the earlier SwiftUI menu-bar implementation, kept as reference until
 the Go daemon reaches installer/notarization parity.
