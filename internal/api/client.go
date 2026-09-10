@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/dev-kryptic/Kryptic.Encryption.Go/kdf"
 	"github.com/dev-kryptic/daemon/internal/applog"
 	"github.com/dev-kryptic/daemon/internal/config"
 )
@@ -194,7 +195,7 @@ type MachineKeys struct {
 // domain-separated auth derivation, so the server never sees the value that
 // unwraps the machine private key. Legacy secrets pass through unchanged.
 func (c *Client) MachineToken(clientId, clientSecret string) (*Tokens, error) {
-	authSecret, err := machineAuthSecret(clientSecret)
+	authSecret, err := kdf.MachineAuthSecret(clientSecret)
 	if err != nil {
 		return nil, err
 	}

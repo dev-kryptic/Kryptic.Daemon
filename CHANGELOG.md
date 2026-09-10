@@ -5,6 +5,13 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+## 1.1.1 - 2026-09-10
+
+### Changed
+
+- `github.com/dev-kryptic/Kryptic.Encryption.Go` v1.1.0. The `ksm2_` auth
+  derivation now comes from the library instead of a local copy.
+
 ## 1.1.0 - 2026-09-10
 
 ### Changed
