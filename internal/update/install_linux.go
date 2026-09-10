@@ -9,11 +9,11 @@ import (
 	"strings"
 )
 
-func privilegedInstall(pairs [][2]string) error {
-	if len(pairs) == 0 {
+func privilegedInstall(files []stagedFile) error {
+	if len(files) == 0 {
 		return nil
 	}
-	script := installScript(pairs)
+	script := installScript(files)
 	if graphical() {
 		if pkexec, err := exec.LookPath("pkexec"); err == nil {
 			if err := runElevated(pkexec, script); err == nil {
@@ -25,24 +25,29 @@ func privilegedInstall(pairs [][2]string) error {
 		if err := runElevated(sudo, script); err == nil {
 			return nil
 		} else {
-			return fmt.Errorf("could not replace files in %s: %w", pairs[0][1], err)
+			return fmt.Errorf("could not replace files in %s: %w", files[0].dest, err)
 		}
 	}
-	return fmt.Errorf("cannot write %s (permission denied). Allow the password prompt, or re-run from a terminal as root", pairs[0][1])
+	return fmt.Errorf("cannot write %s (permission denied). Allow the password prompt, or re-run from a terminal as root", files[0].dest)
 }
 
 func graphical() bool {
 	return os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != ""
 }
 
-func installScript(pairs [][2]string) string {
-	parts := make([]string, 0, len(pairs))
-	for _, pair := range pairs {
-		src := shellQuote(pair[0])
-		dest := shellQuote(pair[1])
+func installScript(files []stagedFile) string {
+	parts := make([]string, 0, len(files))
+	for _, file := range files {
+		src := shellQuote(file.staging)
+		dest := shellQuote(file.dest)
+		// The elevated step re-verifies the checksum computed after download:
+		// even if the staging file were somehow swapped between verification
+		// and elevation, root refuses to install a payload that no longer
+		// matches.
+		check := shellQuote(file.sha256 + "  " + file.staging)
 		parts = append(parts, fmt.Sprintf(
-			"install -m 0755 %s %s.new && mv %s %s.old && mv %s.new %s && rm -f %s.old",
-			src, dest, dest, dest, dest, dest, dest,
+			"echo %s | sha256sum -c --status - && install -m 0755 %s %s.new && mv %s %s.old && mv %s.new %s && rm -f %s.old",
+			check, src, dest, dest, dest, dest, dest, dest,
 		))
 	}
 	return strings.Join(parts, " && ")

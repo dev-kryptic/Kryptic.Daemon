@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -586,13 +588,37 @@ func secretsExport() error {
 	}
 
 	entries, _ := response["secrets"].([]any)
+	var skipped []string
 	for _, raw := range entries {
 		entry, _ := raw.(map[string]any)
 		key, _ := entry["key"].(string)
 		value, _ := entry["value"].(string)
+		if !envKeyPattern.MatchString(key) {
+			skipped = append(skipped, key)
+			continue
+		}
 		fmt.Println(dotenvLine(key, value))
 	}
+	warnSkippedKeys(skipped)
 	return nil
+}
+
+// envKeyPattern is the POSIX shell identifier shape. A key outside it (spaces,
+// newlines, `$(...)`) cannot be rendered safely on the left of a dotenv or
+// shell `export` line: it would inject extra lines or commands into whatever
+// sources the output. JSON export keeps every key - the encoder escapes them.
+var envKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+func warnSkippedKeys(skipped []string) {
+	if len(skipped) == 0 {
+		return
+	}
+	quoted := make([]string, len(skipped))
+	for i, key := range skipped {
+		quoted[i] = strconv.Quote(key)
+	}
+	fmt.Fprintf(os.Stderr, "warning: skipped %d key(s) that are not valid shell identifiers: %s\n",
+		len(quoted), strings.Join(quoted, ", "))
 }
 
 // dotenvLine renders one KEY=value line, quoting when the value contains

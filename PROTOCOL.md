@@ -9,8 +9,13 @@ current project + environment, inject them, and disconnect. One request per conn
 | Platform | Endpoint |
 | --- | --- |
 | Windows | Named pipe `\\.\pipe\kryptic-daemon` |
-| macOS | Unix domain socket `/tmp/kryptic-daemon.sock` |
-| Linux | `$XDG_RUNTIME_DIR/kryptic-daemon.sock`, fallback `/tmp/kryptic-daemon.sock` |
+| macOS | Unix domain socket `~/Library/Application Support/kryptic/kryptic-daemon.sock` |
+| Linux | `$XDG_RUNTIME_DIR/kryptic-daemon.sock`, fallback `~/.config/kryptic/kryptic-daemon.sock` |
+
+The socket always lives in a per-user 0700 directory, never in `/tmp`: a
+predictable path in a world-writable directory would let another local user
+squat on or swap the socket. Clients also refuse to connect to a socket whose
+owner uid is not their own.
 
 The path can be overridden with the `KRYPTIC_SOCKET_PATH` environment variable
 (Packages must honor it - it is how tests point a package at a mock daemon).

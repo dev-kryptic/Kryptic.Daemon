@@ -5,9 +5,25 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+## 1.1.0 - 2026-09-10
+
 ### Changed
 
 - `github.com/dev-kryptic/Kryptic.Encryption.Go` v1.0.2.
+- Machine token exchange supports the new `ksm2_` client-secret format.
+  Legacy secrets keep working unchanged.
+- The daemon socket moved out of `/tmp` into a per-user directory:
+  `~/Library/Application Support/kryptic` on macOS, `$XDG_RUNTIME_DIR` or
+  `~/.config/kryptic` on Linux. Third-party clients should resolve the new
+  path (see PROTOCOL.md).
+- `kryptic ci export` (dotenv/shell) and `kryptic secrets export` skip keys
+  that are not valid shell identifiers, with a stderr warning; JSON output
+  keeps every key.
+
+### Security
+
+- Hardening across the self-update process, macOS keychain handling, local
+  IPC, and request encoding.
 
 ## 1.0.0 - 2026-09-05
 

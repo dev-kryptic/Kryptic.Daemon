@@ -4,9 +4,9 @@ package update
 
 import "fmt"
 
-func privilegedInstall(pairs [][2]string) error {
-	if len(pairs) == 0 {
+func privilegedInstall(files []stagedFile) error {
+	if len(files) == 0 {
 		return nil
 	}
-	return fmt.Errorf("cannot write %s (permission denied)", pairs[0][1])
+	return fmt.Errorf("cannot write %s (permission denied)", files[0].dest)
 }

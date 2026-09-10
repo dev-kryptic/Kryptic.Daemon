@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"time"
@@ -165,8 +166,8 @@ func (c *Client) Me(accessToken string) (*Me, error) {
 
 func (c *Client) Bundle(accessToken, projectPublicId, environment string) (*Bundle, error) {
 	var out Bundle
-	path := fmt.Sprintf("/api/secrets/bundle?projectPublicId=%s&environment=%s", projectPublicId, environment)
-	err := c.get(path, accessToken, &out)
+	query := url.Values{"projectPublicId": {projectPublicId}, "environment": {environment}}
+	err := c.get("/api/secrets/bundle?"+query.Encode(), accessToken, &out)
 	return &out, err
 }
 
@@ -189,10 +190,17 @@ type MachineKeys struct {
 }
 
 // MachineToken exchanges client credentials for a short-lived machine token.
+// v2 secrets ("ksm2_" prefix) are never sent raw: the wire carries the
+// domain-separated auth derivation, so the server never sees the value that
+// unwraps the machine private key. Legacy secrets pass through unchanged.
 func (c *Client) MachineToken(clientId, clientSecret string) (*Tokens, error) {
+	authSecret, err := machineAuthSecret(clientSecret)
+	if err != nil {
+		return nil, err
+	}
 	var out Tokens
-	err := c.post("/api/token", "", map[string]string{
-		"clientId": clientId, "clientSecret": clientSecret,
+	err = c.post("/api/token", "", map[string]string{
+		"clientId": clientId, "clientSecret": authSecret,
 	}, &out)
 	return &out, err
 }

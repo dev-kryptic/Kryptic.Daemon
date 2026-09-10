@@ -84,11 +84,11 @@ func ciExport() error {
 
 	switch format {
 	case "dotenv":
-		for _, pair := range pairs {
+		for _, pair := range exportablePairs(pairs) {
 			fmt.Println(dotenvLine(pair.Key, pair.Value))
 		}
 	case "shell":
-		for _, pair := range pairs {
+		for _, pair := range exportablePairs(pairs) {
 			fmt.Printf("export %s='%s'\n", pair.Key, strings.ReplaceAll(pair.Value, "'", `'\''`))
 		}
 	case "json":
@@ -105,6 +105,23 @@ func ciExport() error {
 type ciPair struct {
 	Key   string
 	Value string
+}
+
+// exportablePairs drops keys that are not valid shell identifiers (see
+// envKeyPattern) before dotenv/shell rendering, warning on stderr. JSON
+// export passes keys through unchanged.
+func exportablePairs(pairs []ciPair) []ciPair {
+	kept := make([]ciPair, 0, len(pairs))
+	var skipped []string
+	for _, pair := range pairs {
+		if envKeyPattern.MatchString(pair.Key) {
+			kept = append(kept, pair)
+		} else {
+			skipped = append(skipped, pair.Key)
+		}
+	}
+	warnSkippedKeys(skipped)
+	return kept
 }
 
 // decryptMachineBundle runs the full local decryption chain:

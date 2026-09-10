@@ -65,7 +65,10 @@ kryptic logout
   macOS menu bar picks a folder, shows determinate progress, and writes that
   report at the folder you chose. It works signed out, with no network.
 
-- **Serving**: a unix socket (`/tmp/kryptic-daemon.sock`, 0600, override with
+- **Serving**: a unix socket in a per-user 0700 directory
+  (`~/Library/Application Support/kryptic/kryptic-daemon.sock` on macOS,
+  `$XDG_RUNTIME_DIR/kryptic-daemon.sock` on Linux with a
+  `~/.config/kryptic` fallback; 0600, override with
   `KRYPTIC_SOCKET_PATH`) speaking [PROTOCOL.md](PROTOCOL.md) v1. Every connection
   is authenticated by the caller's OS credentials (`LOCAL_PEERCRED`/`SO_PEERCRED`
   on macOS/Linux, the pipe security descriptor on Windows), so only a process

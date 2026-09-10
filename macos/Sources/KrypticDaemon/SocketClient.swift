@@ -16,7 +16,8 @@ enum SocketClient {
     }
 
     static var socketPath: String {
-        ProcessInfo.processInfo.environment["KRYPTIC_SOCKET_PATH"] ?? "/tmp/kryptic-daemon.sock"
+        ProcessInfo.processInfo.environment["KRYPTIC_SOCKET_PATH"]
+            ?? NSHomeDirectory() + "/Library/Application Support/kryptic/kryptic-daemon.sock"
     }
 
     static func status() -> DaemonStatus {

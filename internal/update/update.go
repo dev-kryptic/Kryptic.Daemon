@@ -44,6 +44,14 @@ type installFile struct {
 	data []byte
 }
 
+// stagedFile is a verified payload written to the private staging directory,
+// carrying the sha256 the elevated installer re-checks before touching dest.
+type stagedFile struct {
+	staging string
+	dest    string
+	sha256  string
+}
+
 // Run updates the current executable to the latest release. currentVersion is
 // compared against the release tag so an up-to-date install is a no-op.
 func Run(currentVersion string) error {
@@ -374,30 +382,37 @@ func replaceAt(dest string, binary []byte) error {
 }
 
 func installFiles(files []installFile) error {
-	var elevated [][2]string
+	var elevated []stagedFile
+	stagingDir := ""
 	for _, file := range files {
 		if err := replaceAt(file.dest, file.data); err == nil {
 			continue
 		} else if !permissionDenied(err) {
 			return err
 		}
-		dir := filepath.Join(fallbackTempDir(), "Kryptic", "updates")
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
+		if stagingDir == "" {
+			dir, err := privateStagingDir()
+			if err != nil {
+				return err
+			}
+			stagingDir = dir
 		}
-		staging := filepath.Join(dir, filepath.Base(file.dest)+".new")
+		staging := filepath.Join(stagingDir, filepath.Base(file.dest)+".new")
 		if err := os.WriteFile(staging, file.data, 0o755); err != nil {
 			return err
 		}
-		elevated = append(elevated, [2]string{staging, file.dest})
+		sum := sha256.Sum256(file.data)
+		elevated = append(elevated, stagedFile{
+			staging: staging,
+			dest:    file.dest,
+			sha256:  hex.EncodeToString(sum[:]),
+		})
 	}
 	if len(elevated) == 0 {
 		return nil
 	}
 	err := privilegedInstall(elevated)
-	for _, pair := range elevated {
-		_ = os.Remove(pair[0])
-	}
+	_ = os.RemoveAll(stagingDir)
 	return err
 }
 

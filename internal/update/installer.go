@@ -116,38 +116,29 @@ func RunInstaller(currentVersion string) error {
 }
 
 func installerDest(assetName string) (string, error) {
-	base, err := os.UserCacheDir()
-	if err != nil || base == "" || !dirExists(base) {
-		base = fallbackTempDir()
-	}
-	dir := filepath.Join(base, "Kryptic", "updates")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		dir = fallbackTempDir()
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return "", err
-		}
+	dir, err := privateStagingDir()
+	if err != nil {
+		return "", err
 	}
 	return filepath.Join(dir, assetName), nil
 }
 
-func fallbackTempDir() string {
-	if runtime.GOOS == "windows" {
-		for _, key := range []string{"LOCALAPPDATA", "TEMP", "TMP"} {
-			if v := os.Getenv(key); v != "" && dirExists(v) {
-				return filepath.Join(v, "Kryptic", "updates")
-			}
-		}
-		return filepath.Join(`C:\Windows\Temp`, "Kryptic", "updates")
+// privateStagingDir creates a fresh 0700 directory under the per-user cache
+// dir for update payloads. Never /tmp or another shared world-writable
+// directory: an elevated installer consumes these files, so any local user
+// able to swap them after verification could run code as root. When the
+// per-user cache dir cannot be resolved, the update fails instead of
+// degrading to a shared path.
+func privateStagingDir() (string, error) {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("cannot stage the update, no per-user cache directory: %w", err)
 	}
-	if dirExists("/tmp") {
-		return "/tmp"
+	parent := filepath.Join(base, "Kryptic", "updates")
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return "", err
 	}
-	return "/var/tmp"
-}
-
-func dirExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
+	return os.MkdirTemp(parent, "stage-")
 }
 
 func installerAssetName(goos, goarch, version string) (string, error) {
