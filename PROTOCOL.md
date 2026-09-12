@@ -77,11 +77,31 @@ Success response:
   "organization": "Acme",
   "daemonVersion": "1.0.0",
   "apiUrl": "https://daemon.kryptic.dev",
-  "orgKeyGranted": true
+  "orgKeyGranted": true,
+  "connection": "connected",
+  "activeProfileId": "a1b2c3d4e5f60708",
+  "profiles": [
+    {
+      "id": "a1b2c3d4e5f60708",
+      "email": "dev@company.com",
+      "organization": "Acme",
+      "api": "https://daemon.kryptic.dev",
+      "active": true,
+      "signedIn": true
+    }
+  ]
 }
 ```
 
-`apiUrl` is the Daemon BFF this process is using. `orgKeyGranted` is whether an admin has sealed the organization key to this device. Signed in is not enough to decrypt: without this grant every secrets fetch returns `access_denied`. Clients that do not understand these fields must ignore them (forward compatibility). Older daemons omit `orgKeyGranted`; treat a missing field as granted.
+`apiUrl` is the Daemon BFF the **active** profile is using. Each saved profile
+has its own `api`. `orgKeyGranted` is whether an admin has sealed the
+organization key to this device. Signed in is not enough to decrypt: without
+this grant every secrets fetch returns `access_denied`. `connection` is
+`connected`, `awaiting_approval`, or `signed_out`. `profiles` lists saved
+accounts on this install; switching the active profile does not sign the
+others out. Clients that do not understand these fields must ignore them
+(forward compatibility). Older daemons omit `orgKeyGranted`; treat a missing
+field as granted.
 
 ### `flush` - drop the daemon's in-memory secrets cache
 
@@ -108,6 +128,35 @@ instead of serving them until the token expires. Packages never send this.
 
 ```json
 { "v": 1, "ok": true }
+```
+
+### `switch-profile` - activate another saved account
+
+Additive in v1. The menu bar and tray send this so secrets start coming from
+the chosen profile. Other profiles stay signed in. The daemon drops its
+in-memory token and cache, points at that profile's Daemon BFF, then replies
+with the same body as `status`.
+
+```json
+{ "v": 1, "type": "switch-profile", "profileId": "a1b2c3d4e5f60708" }
+```
+
+### `set-api` - change the active profile's Daemon BFF
+
+Additive in v1. Signs that profile out of the previous host. Other profiles
+keep their URL and session.
+
+```json
+{ "v": 1, "type": "set-api", "api": "https://daemon.example.com" }
+```
+
+### `delete-profile` - remove a saved account from this install
+
+Additive in v1. Revokes that profile's device on its server, then deletes its
+keys. Other profiles are not touched.
+
+```json
+{ "v": 1, "type": "delete-profile", "profileId": "a1b2c3d4e5f60708" }
 ```
 
 ## Error responses

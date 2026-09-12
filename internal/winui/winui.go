@@ -52,8 +52,11 @@ const (
 	WMSetIcon        = 0x0080
 	WMGetText        = 0x000D
 	WMGetTextLength  = 0x000E
+	WMTimer          = 0x0113
 	WMUser           = 0x0400
 	WMApp            = 0x8000
+	SWHide           = 0
+	SWRestore        = 9
 	PBMSetPos        = WMUser + 2
 	PBMSetRange32    = WMUser + 6
 	PBSSmooth        = 1
@@ -76,14 +79,15 @@ const (
 
 	ButtonPrimary uintptr = 1
 	ButtonGhost   uintptr = 2
+	ButtonDanger  uintptr = 3
 
-	odsSelected = 0x0001
-	odsFocus    = 0x0010
-	psSolid     = 0
-	dtCenter    = 0x00000001
-	dtVCenter   = 0x00000004
-	dtSingle    = 0x00000020
-	tmeLeave    = 0x00000002
+	odsSelected  = 0x0001
+	odsFocus     = 0x0010
+	psSolid      = 0
+	dtCenter     = 0x00000001
+	dtVCenter    = 0x00000004
+	dtSingle     = 0x00000020
+	tmeLeave     = 0x00000002
 	buttonRadius = 20
 )
 
@@ -104,6 +108,10 @@ var (
 	ProcDispatchMessageW     = User32.NewProc("DispatchMessageW")
 	ProcGetSystemMetrics     = User32.NewProc("GetSystemMetrics")
 	ProcSetForegroundWindow  = User32.NewProc("SetForegroundWindow")
+	ProcEnableWindow         = User32.NewProc("EnableWindow")
+	ProcIsWindow             = User32.NewProc("IsWindow")
+	ProcSetTimer             = User32.NewProc("SetTimer")
+	ProcKillTimer            = User32.NewProc("KillTimer")
 	ProcLoadCursorW          = User32.NewProc("LoadCursorW")
 	ProcSendMessageW         = User32.NewProc("SendMessageW")
 	ProcGetDC                = User32.NewProc("GetDC")
@@ -161,6 +169,9 @@ type Theme struct {
 	SurfaceHot uint32
 	Border     uint32
 	BorderHot  uint32
+	Danger     uint32
+	DangerFill uint32
+	DangerHot  uint32
 }
 
 func CurrentTheme() Theme {
@@ -177,10 +188,13 @@ func CurrentTheme() Theme {
 			AccentHot:  0x0078C025,
 			AccentDown: 0x00579A0C, // #0c9a57
 			Ink:        0x000C1404, // #04140c
-			Surface:    0x00FFFFFF,
-			SurfaceHot: 0x00F4F6F3,
+			Surface:    0x00F5F4F4, // #f4f4f5
+			SurfaceHot: 0x00ECECEC,
 			Border:     0x00E0E6DD, // #dde6e0
 			BorderHot:  0x00C8D0C5,
+			Danger:     0x00481DE1, // #e11d48
+			DangerFill: 0x00EEE8FD,
+			DangerHot:  0x00E0D4F8,
 		}
 	}
 	return Theme{
@@ -195,10 +209,13 @@ func CurrentTheme() Theme {
 		AccentHot:  0x00B5F578,
 		AccentDown: 0x0086D43B, // #3bd486
 		Ink:        0x000C1404, // #04140c
-		Surface:    0x002C2C2C,
+		Surface:    0x002E2C2C, // #2c2c2e
 		SurfaceHot: 0x00353535,
 		Border:     0x003A3A3A,
 		BorderHot:  0x00555555,
+		Danger:     0x003A45FF, // #ff453a
+		DangerFill: 0x00282838,
+		DangerHot:  0x00303042,
 	}
 }
 
@@ -494,4 +511,189 @@ func scaleToFit(src image.Image, maxW, maxH int) *image.RGBA {
 		}
 	}
 	return out
+}
+
+type drawItemStruct struct {
+	CtlType    uint32
+	CtlID      uint32
+	ItemID     uint32
+	ItemAction uint32
+	ItemState  uint32
+	HwndItem   windows.Handle
+	HDC        windows.Handle
+	RcItem     Rect
+	ItemData   uintptr
+}
+
+type trackMouseEvent struct {
+	Size      uint32
+	Flags     uint32
+	HwndTrack windows.Handle
+	HoverTime uint32
+}
+
+var (
+	buttonOrig = map[windows.Handle]uintptr{}
+	buttonCB   = windows.NewCallback(buttonSubclass)
+	hoveredBtn windows.Handle
+	buttonMu   sync.Mutex
+)
+
+func CreateButton(parent, instance windows.Handle, id uintptr, x, y, w, h int32, label string, kind uintptr, font windows.Handle) windows.Handle {
+	style := uint32(WSChild | WSVisible | WSTabStop | BSOwnerDraw)
+	hwnd := CreateControl(0, "BUTTON", label, style, x, y, w, h, parent, instance, id)
+	if hwnd == 0 {
+		return 0
+	}
+	ProcSetWindowLongPtrW.Call(uintptr(hwnd), GWLPUserData, kind)
+	if font != 0 {
+		ProcSendMessageW.Call(uintptr(hwnd), WMSetFont, uintptr(font), 1)
+	}
+	orig, _, _ := ProcSetWindowLongPtrW.Call(uintptr(hwnd), GWLWNDPROC, buttonCB)
+	buttonMu.Lock()
+	buttonOrig[hwnd] = orig
+	buttonMu.Unlock()
+	return hwnd
+}
+
+func HandleDrawItem(lparam uintptr, theme Theme, font windows.Handle) uintptr {
+	dis := (*drawItemStruct)(unsafe.Pointer(lparam))
+	kind, _, _ := ProcGetWindowLongPtrW.Call(uintptr(dis.HwndItem), GWLPUserData)
+	buttonMu.Lock()
+	hot := dis.HwndItem == hoveredBtn
+	buttonMu.Unlock()
+	pressed := dis.ItemState&odsSelected != 0
+
+	var fill, text, border uint32
+	switch kind {
+	case ButtonPrimary:
+		fill = theme.Accent
+		if hot {
+			fill = theme.AccentHot
+		}
+		if pressed {
+			fill = theme.AccentDown
+		}
+		text = theme.Ink
+		border = fill
+	case ButtonDanger:
+		fill = theme.DangerFill
+		if hot {
+			fill = theme.DangerHot
+		}
+		text = theme.Danger
+		border = fill
+	default:
+		fill = theme.Surface
+		if hot {
+			fill = theme.SurfaceHot
+		}
+		text = theme.Primary
+		border = theme.Border
+		if hot {
+			border = theme.BorderHot
+		}
+	}
+
+	hdc := uintptr(dis.HDC)
+	brush := NewBrush(fill)
+	pen, _, _ := ProcCreatePen.Call(psSolid, 1, uintptr(border))
+	oldBrush, _, _ := ProcSelectObject.Call(hdc, uintptr(brush))
+	oldPen, _, _ := ProcSelectObject.Call(hdc, pen)
+	rc := dis.RcItem
+	ProcRoundRect.Call(hdc, uintptr(rc.Left), uintptr(rc.Top), uintptr(rc.Right), uintptr(rc.Bottom), buttonRadius, buttonRadius)
+	ProcSelectObject.Call(hdc, oldBrush)
+	ProcSelectObject.Call(hdc, oldPen)
+	ProcDeleteObject.Call(uintptr(brush))
+	ProcDeleteObject.Call(pen)
+
+	if font != 0 {
+		ProcSelectObject.Call(hdc, uintptr(font))
+	}
+	ProcSetBkMode.Call(hdc, bkTransparent)
+	ProcSetTextColor.Call(hdc, uintptr(text))
+	label := WindowText(dis.HwndItem)
+	if label != "" {
+		ptr, _ := windows.UTF16PtrFromString(label)
+		textRC := rc
+		ProcDrawTextW.Call(hdc, uintptr(unsafe.Pointer(ptr)), ^uintptr(0), uintptr(unsafe.Pointer(&textRC)), dtCenter|dtVCenter|dtSingle)
+	}
+	return 1
+}
+
+func buttonSubclass(hwnd, message, wparam, lparam uintptr) uintptr {
+	switch message {
+	case WMMouseMove:
+		buttonMu.Lock()
+		old := hoveredBtn
+		hoveredBtn = windows.Handle(hwnd)
+		buttonMu.Unlock()
+		if old != windows.Handle(hwnd) {
+			invalidate(old)
+			invalidate(windows.Handle(hwnd))
+		}
+		tme := trackMouseEvent{
+			Size:      uint32(unsafe.Sizeof(trackMouseEvent{})),
+			Flags:     tmeLeave,
+			HwndTrack: windows.Handle(hwnd),
+		}
+		ProcTrackMouseEvent.Call(uintptr(unsafe.Pointer(&tme)))
+	case WMMouseLeave:
+		buttonMu.Lock()
+		if hoveredBtn == windows.Handle(hwnd) {
+			hoveredBtn = 0
+		}
+		buttonMu.Unlock()
+		invalidate(windows.Handle(hwnd))
+	case WMDestroy:
+		buttonMu.Lock()
+		orig := buttonOrig[windows.Handle(hwnd)]
+		delete(buttonOrig, windows.Handle(hwnd))
+		if hoveredBtn == windows.Handle(hwnd) {
+			hoveredBtn = 0
+		}
+		buttonMu.Unlock()
+		if orig != 0 {
+			ret, _, _ := ProcCallWindowProcW.Call(orig, hwnd, message, wparam, lparam)
+			return ret
+		}
+		return 0
+	}
+	buttonMu.Lock()
+	orig := buttonOrig[windows.Handle(hwnd)]
+	buttonMu.Unlock()
+	if orig == 0 {
+		ret, _, _ := ProcDefWindowProcW.Call(hwnd, message, wparam, lparam)
+		return ret
+	}
+	ret, _, _ := ProcCallWindowProcW.Call(orig, hwnd, message, wparam, lparam)
+	return ret
+}
+
+func invalidate(hwnd windows.Handle) {
+	if hwnd == 0 {
+		return
+	}
+	ProcInvalidateRect.Call(uintptr(hwnd), 0, 1)
+}
+
+func SetText(hwnd windows.Handle, text string) {
+	ptr, _ := windows.UTF16PtrFromString(text)
+	ProcSetWindowTextW.Call(uintptr(hwnd), uintptr(unsafe.Pointer(ptr)))
+}
+
+func Enable(hwnd windows.Handle, on bool) {
+	v := uintptr(0)
+	if on {
+		v = 1
+	}
+	ProcEnableWindow.Call(uintptr(hwnd), v)
+}
+
+func Show(hwnd windows.Handle, on bool) {
+	cmd := uintptr(SWHide)
+	if on {
+		cmd = SWShow
+	}
+	ProcShowWindow.Call(uintptr(hwnd), cmd)
 }

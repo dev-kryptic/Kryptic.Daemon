@@ -27,16 +27,27 @@ func currentTrayPNG() []byte {
 	light := panelIsLight()
 	iconMu.Lock()
 	defer iconMu.Unlock()
+	var base []byte
 	if light {
 		if pngBlack == nil {
 			pngBlack = rasterizeTray(falconBlackSVG)
 		}
-		return pngBlack
+		base = pngBlack
+	} else {
+		if pngWhite == nil {
+			pngWhite = rasterizeTray(falconWhiteSVG)
+		}
+		base = pngWhite
 	}
-	if pngWhite == nil {
-		pngWhite = rasterizeTray(falconWhiteSVG)
+	if len(base) == 0 {
+		return base
 	}
-	return pngWhite
+	r, g, b := trayDotRGB(currentTrayConnection())
+	dotted, err := trayicon.WithStatusDot(base, r, g, b)
+	if err != nil {
+		return base
+	}
+	return dotted
 }
 
 func rasterizeTray(svg []byte) []byte {

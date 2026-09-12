@@ -17,11 +17,6 @@ final class DaemonController {
            !explicit.isEmpty {
             return explicit
         }
-        #if DEBUG
-        if ConfigStore.savedAPI == nil {
-            return "http://localhost:5237"
-        }
-        #endif
         return nil
     }
 
@@ -187,10 +182,14 @@ final class DaemonController {
     /// Runs `kryptic login` (the CLI opens the browser and polls the device flow).
     /// `onCode` fires with the user code to confirm; `onFinished` with nil on success
     /// or the CLI's error line on failure, so the menu can say what went wrong.
-    func login(onCode: @escaping (String) -> Void, onFinished: @escaping (String?) -> Void) {
+    func login(addAccount: Bool = false, api: String? = nil, onCode: @escaping (String) -> Void, onFinished: @escaping (String?) -> Void) {
         guard loginProcess?.isRunning != true, let binary = Self.binaryURL() else { return }
 
-        let process = Self.makeProcess(binary, ["login"])
+        var arguments = addAccount ? ["login", "--add"] : ["login"]
+        if let api, !api.isEmpty {
+            arguments.append(contentsOf: ["--api", api])
+        }
+        let process = Self.makeProcess(binary, arguments)
 
         let pipe = Pipe()
         let errorPipe = Pipe()

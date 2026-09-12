@@ -535,6 +535,12 @@ jobs:
           [Run]
           Filename: "{app}\kryptic-tray.exe"; Description: "Start Kryptic"; Flags: nowait postinstall skipifsilent
 
+          [UninstallRun]
+          Filename: "{sys}\cmd.exe"; Parameters: "/c cmdkey /delete:dev.kryptic.daemon/refresh-token"; Flags: runhidden; RunOnceId: "WipeKrypticDeviceKeys"
+
+          [UninstallDelete]
+          Type: files; Name: "{userappdata}\kryptic\session"
+
           [Code]
           function PrepareToInstall(var NeedsRestart: Boolean): String;
           var

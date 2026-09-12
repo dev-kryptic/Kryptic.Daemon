@@ -51,6 +51,10 @@ func main() {
 		err = runLogin(client)
 	case "logout":
 		err = runLogout(client)
+	case "profile":
+		err = runProfile()
+	case "reset-device":
+		err = runResetDevice(client)
 	case "status":
 		err = status()
 	case "whoami":
@@ -63,6 +67,8 @@ func main() {
 		err = flush()
 	case "logs":
 		err = runLogs()
+	case "panel":
+		err = runPanel()
 	case "version":
 		fmt.Println("kryptic", server.Version)
 	default:
@@ -84,7 +90,14 @@ func usage() {
   kryptic start                 run the daemon (foreground; managed by launchd/systemd)
   kryptic stop                  stop the running daemon
   kryptic login                 sign in via your browser (device flow)
-  kryptic logout                revoke this device's session (asks to confirm; --yes skips)
+  kryptic login --add           sign in another account without leaving the current one
+  kryptic login --add --api URL sign in against a different Daemon BFF (self-host vs cloud)
+  kryptic logout                revoke the active profile's session (asks to confirm; --yes skips)
+  kryptic profile               list saved accounts on this install
+  kryptic profile switch ID     switch the active account (email or profile id)
+  kryptic profile delete ID     remove an account from this install (revokes that profile)
+  kryptic reset-device          delete the active profile's keys (asks to confirm; --yes skips)
+  kryptic reset-device --all    wipe every profile on this install
   kryptic status                daemon + session status
   kryptic whoami                the signed-in user and organization
   kryptic secrets list          projects and environments you can pull
@@ -99,8 +112,9 @@ func usage() {
   kryptic update --check        report whether a newer release exists (exit 2 if so)
   kryptic update --installer    download the signed installer and open it (macOS/Windows)
   kryptic config                show the Daemon BFF URL
-  kryptic config set-api URL    save the server URL (signs you out if it changes)
+  kryptic config set-api URL    save the active profile's server URL (that profile only)
   kryptic config reset-api      return to https://daemon.kryptic.dev
+  kryptic panel                 open Open Kryptic (Windows/Linux; on macOS use the menu)
   kryptic version`)
 }
 
@@ -238,13 +252,90 @@ func runScan() error {
 // ---------- auth ----------
 
 func runLogin(client *api.Client) error {
-	me, err := login.Run(client, func(userCode, verificationURL string) {
+	add := hasArg("--add")
+	target := client.BaseURL
+	if raw, ok := argValue("--api"); ok {
+		normalized, err := config.NormalizeAPI(raw)
+		if err != nil {
+			return err
+		}
+		target = normalized
+	} else if add {
+		target, _ = config.API()
+	} else {
+		target = authstore.ResolvedAPI()
+	}
+	client = api.NewClientFor(target)
+	run := login.Run
+	if add {
+		run = login.RunAdd
+	}
+	me, err := run(client, func(userCode, verificationURL string) {
 		fmt.Printf("Confirm this code in your browser: %s\n%s\n", userCode, verificationURL)
 	})
 	if err != nil {
 		return err
 	}
 	fmt.Printf("Signed in as %s (%s). The daemon can now serve secrets.\n", me.Email, me.Organization)
+	return nil
+}
+
+func runProfile() error {
+	args := os.Args[2:]
+	if len(args) == 0 || args[0] == "list" {
+		return listProfiles()
+	}
+	if args[0] == "switch" {
+		if len(args) < 2 {
+			return fmt.Errorf("usage: kryptic profile switch <id|email>")
+		}
+		if err := login.Switch(args[1]); err != nil {
+			return err
+		}
+		fmt.Printf("Switched to %s. Other accounts stay signed in.\n", args[1])
+		return nil
+	}
+	if args[0] == "delete" || args[0] == "remove" {
+		if len(args) < 2 {
+			return fmt.Errorf("usage: kryptic profile delete <id|email>")
+		}
+		if !profileDeleteConfirmed() {
+			fmt.Println("Delete cancelled.")
+			return nil
+		}
+		if err := login.Delete(args[1]); err != nil {
+			return err
+		}
+		fmt.Printf("Deleted %s from this install.\n", args[1])
+		return nil
+	}
+	return fmt.Errorf("usage: kryptic profile [list|switch <id|email>|delete <id|email>]")
+}
+
+func listProfiles() error {
+	store, err := authstore.LoadStore()
+	if err != nil {
+		fmt.Println("No saved accounts. Run `kryptic login`.")
+		return nil
+	}
+	for _, p := range store.Profiles {
+		mark := " "
+		if p.ID == store.ActiveID {
+			mark = "*"
+		}
+		state := "signed out"
+		if p.SignedIn() {
+			state = "signed in"
+		}
+		label := p.Email
+		if label == "" {
+			label = p.ID
+		}
+		if p.Organization != "" {
+			label += " @ " + p.Organization
+		}
+		fmt.Printf("%s %s  (%s, %s, %s)\n", mark, label, state, p.API(), p.ID)
+	}
 	return nil
 }
 
@@ -256,10 +347,73 @@ func runLogout(client *api.Client) error {
 	if err := login.Logout(client); err != nil {
 		return err
 	}
-	fmt.Println("Signed out. This also deleted the device's encryption key:")
-	fmt.Println("after your next `kryptic login`, an admin must re-grant the organization")
-	fmt.Println("key to this device under Approvals before secrets can be decrypted.")
+	fmt.Println("Signed out. This machine's encryption keys were kept, so the next")
+	fmt.Println("`kryptic login` does not need a new admin grant unless durable device")
+	fmt.Println("trust is off. Use `kryptic reset-device` to wipe the keys.")
 	return nil
+}
+
+func runResetDevice(client *api.Client) error {
+	all := hasArg("--all")
+	if !resetDeviceConfirmed() {
+		fmt.Println("Reset cancelled - this machine's keys are still here.")
+		return nil
+	}
+	if all {
+		if err := login.ResetAllDevices(client); err != nil {
+			return err
+		}
+		fmt.Println("Every profile on this install was wiped. After the next")
+		fmt.Println("`kryptic login`, an admin must grant the organization key under Approvals.")
+		return nil
+	}
+	if err := login.ResetDevice(client); err != nil {
+		return err
+	}
+	fmt.Println("This profile's keys were deleted. After your next `kryptic login`,")
+	fmt.Println("an admin must grant the organization key to this machine under Approvals.")
+	return nil
+}
+
+func hasArg(name string) bool {
+	for _, arg := range os.Args[2:] {
+		if arg == name {
+			return true
+		}
+	}
+	return false
+}
+
+func argValue(name string) (string, bool) {
+	args := os.Args[2:]
+	for i, arg := range args {
+		if arg == name && i+1 < len(args) {
+			return args[i+1], true
+		}
+		if strings.HasPrefix(arg, name+"=") {
+			return strings.TrimPrefix(arg, name+"="), true
+		}
+	}
+	return "", false
+}
+
+func profileDeleteConfirmed() bool {
+	for _, arg := range os.Args[2:] {
+		if arg == "--yes" || arg == "-y" {
+			return true
+		}
+	}
+	stat, err := os.Stdin.Stat()
+	if err != nil || stat.Mode()&os.ModeCharDevice == 0 {
+		return true
+	}
+	fmt.Println("This removes that account from this install and revokes its device on that server.")
+	fmt.Println("Other profiles are not touched.")
+	fmt.Print("Delete this profile? [y/N] ")
+	var answer string
+	_, _ = fmt.Scanln(&answer)
+	answer = strings.ToLower(strings.TrimSpace(answer))
+	return answer == "y" || answer == "yes"
 }
 
 // logoutConfirmed warns that signing out discards the device's org-key grant
@@ -277,10 +431,35 @@ func logoutConfirmed() bool {
 		return true
 	}
 
-	fmt.Println("Signing out revokes this device's session and deletes its encryption key.")
-	fmt.Println("When you sign in again, an admin must grant the organization key to this")
-	fmt.Println("device again under Approvals before it can decrypt any secrets.")
+	fmt.Println("Signing out revokes this session and drops secrets from memory.")
+	fmt.Println("This machine's encryption keys stay, so the next sign-in does not")
+	fmt.Println("need a new admin grant (unless durable device trust is off).")
 	fmt.Print("Sign out anyway? [y/N] ")
+
+	var answer string
+	_, _ = fmt.Scanln(&answer)
+	answer = strings.ToLower(strings.TrimSpace(answer))
+	return answer == "y" || answer == "yes"
+}
+
+func resetDeviceConfirmed() bool {
+	for _, arg := range os.Args[2:] {
+		if arg == "--yes" || arg == "-y" {
+			return true
+		}
+	}
+	stat, err := os.Stdin.Stat()
+	if err != nil || stat.Mode()&os.ModeCharDevice == 0 {
+		return true
+	}
+
+	if hasArg("--all") {
+		fmt.Println("This deletes every profile's encryption keys on this install.")
+	} else {
+		fmt.Println("This deletes the active profile's encryption keys on this install.")
+	}
+	fmt.Println("The next `kryptic login` needs a new admin grant under Approvals.")
+	fmt.Print("Reset this device? [y/N] ")
 
 	var answer string
 	_, _ = fmt.Scanln(&answer)
@@ -296,6 +475,9 @@ func platformAccessToken(client *api.Client) (string, error) {
 		session, err := authstore.LoadSession()
 		if err != nil {
 			return err
+		}
+		if session.RefreshToken == "" {
+			return authstore.ErrNotLoggedIn
 		}
 		tokens, err := client.Refresh(session.RefreshToken)
 		if err != nil {
@@ -355,6 +537,12 @@ func status() error {
 	} else {
 		fmt.Printf("daemon: online (v%v) - not signed in (run `kryptic login`)\n", response["daemonVersion"])
 	}
+	if connection, ok := response["connection"].(string); ok && connection != "" {
+		fmt.Printf("connection: %s\n", connection)
+	}
+	if raw, ok := response["profiles"].([]any); ok && len(raw) > 1 {
+		fmt.Printf("profiles: %d saved (kryptic profile)\n", len(raw))
+	}
 	if reported, ok := response["apiUrl"].(string); ok && reported != "" {
 		apiURL = reported
 	}
@@ -383,10 +571,10 @@ func runLogs() error {
 func runConfig() error {
 	args := os.Args[2:]
 	if len(args) == 0 {
-		url, source := config.API()
+		url, source := config.Resolve(activeProfileAPI())
 		fmt.Printf("api: %s (%s)\n", url, source)
 		if config.EnvOverrides() {
-			fmt.Println("KRYPTIC_API is set and overrides the saved URL.")
+			fmt.Println("KRYPTIC_API is set and overrides every profile's URL.")
 		}
 		return nil
 	}
@@ -395,42 +583,39 @@ func runConfig() error {
 		if len(args) < 2 {
 			return fmt.Errorf("usage: kryptic config set-api URL")
 		}
-		return applyAPIChange(func() error { return config.SetAPI(args[1]) })
+		return applyProfileAPI(args[1])
 	case "reset-api":
-		return applyAPIChange(config.ResetAPI)
+		return applyProfileAPI(config.DefaultAPI)
 	default:
 		return fmt.Errorf("usage: kryptic config [set-api URL|reset-api]")
 	}
 }
 
-func applyAPIChange(write func() error) error {
-	previous, _ := config.API()
-	previousClient := api.NewClientFor(previous)
-	if err := write(); err != nil {
+func activeProfileAPI() string {
+	store, err := authstore.LoadStore()
+	if err != nil {
+		return ""
+	}
+	p, ok := store.Active()
+	if !ok {
+		return ""
+	}
+	return p.Config.API
+}
+
+func applyProfileAPI(raw string) error {
+	previous := authstore.ResolvedAPI()
+	if err := login.SetActiveAPI(raw); err != nil {
 		return err
 	}
-	applog.Event("cli", "config.api")
-	next, source := config.API()
+	next, source := config.Resolve(activeProfileAPI())
 	fmt.Printf("api: %s (%s)\n", next, source)
 	if config.EnvOverrides() {
 		fmt.Println("KRYPTIC_API is set and still overrides the saved URL.")
 		return nil
 	}
-	if previous == next {
-		return nil
-	}
-	hadSession := false
-	if _, err := authstore.LoadSession(); err == nil {
-		hadSession = true
-	}
-	_ = login.Logout(previousClient)
-	if hadSession {
-		fmt.Println("signed out of the previous server. Run `kryptic login` against the new one.")
-	} else {
-		fmt.Println("run `kryptic login` against the new server.")
-	}
-	if _, err := ipc.Request(map[string]any{"type": "status"}); err == nil {
-		update.RestartDaemon()
+	if previous != next {
+		fmt.Println("this profile was signed out of the previous server. Other profiles are unchanged.")
 	}
 	return nil
 }

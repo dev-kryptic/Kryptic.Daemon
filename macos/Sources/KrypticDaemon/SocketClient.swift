@@ -4,6 +4,36 @@ import Foundation
 /// Minimal client for the daemon's NDJSON unix socket (PROTOCOL.md v1).
 /// One request per connection, mirroring what the SDKs do.
 enum SocketClient {
+    struct Profile: Equatable, Identifiable {
+        var id: String
+        var email: String
+        var organization: String
+        var api: String
+        var active: Bool
+        var signedIn: Bool
+
+        var title: String {
+            var label = email.isEmpty ? id : email
+            if !organization.isEmpty {
+                label += " · \(organization)"
+            }
+            if !api.isEmpty {
+                label += " · \(HostLabel.display(api))"
+            }
+            if !signedIn {
+                label += " (signed out)"
+            }
+            return label
+        }
+    }
+
+    enum Connection: String, Equatable {
+        case signedOut = "signed_out"
+        case connecting = "connecting"
+        case awaitingApproval = "awaiting_approval"
+        case connected
+    }
+
     struct DaemonStatus: Equatable {
         var running = false
         var authenticated = false
@@ -13,6 +43,9 @@ enum SocketClient {
         var apiUrl: String?
         /// Missing key from an older daemon is treated as granted.
         var orgKeyGranted = true
+        var connection: Connection = .signedOut
+        var profiles: [Profile] = []
+        var activeProfileId: String?
     }
 
     static var socketPath: String {
@@ -24,6 +57,12 @@ enum SocketClient {
         guard let response = request(["v": 1, "type": "status"]) else {
             return DaemonStatus()
         }
+        let granted = response["orgKeyGranted"] as? Bool ?? true
+        let rawConnection = response["connection"] as? String
+        let connection = Connection(rawValue: rawConnection ?? "")
+            ?? (response["authenticated"] as? Bool == true
+                ? (granted ? .connected : .awaitingApproval)
+                : .signedOut)
         return DaemonStatus(
             running: true,
             authenticated: response["authenticated"] as? Bool ?? false,
@@ -31,8 +70,29 @@ enum SocketClient {
             organization: response["organization"] as? String,
             daemonVersion: response["daemonVersion"] as? String,
             apiUrl: response["apiUrl"] as? String,
-            orgKeyGranted: response["orgKeyGranted"] as? Bool ?? true
+            orgKeyGranted: granted,
+            connection: connection,
+            profiles: parseProfiles(response["profiles"]),
+            activeProfileId: response["activeProfileId"] as? String
         )
+    }
+
+    static func switchProfile(_ id: String) -> Bool {
+        guard let response = request(["v": 1, "type": "switch-profile", "profileId": id]),
+              response["ok"] as? Bool == true else { return false }
+        return true
+    }
+
+    static func setAPI(_ url: String) -> Bool {
+        guard let response = request(["v": 1, "type": "set-api", "api": url]),
+              response["ok"] as? Bool == true else { return false }
+        return true
+    }
+
+    static func deleteProfile(_ id: String) -> Bool {
+        guard let response = request(["v": 1, "type": "delete-profile", "profileId": id]),
+              response["ok"] as? Bool == true else { return false }
+        return true
     }
 
     /// Asks the daemon to drop its in-memory secrets cache. Returns the number of
@@ -41,6 +101,22 @@ enum SocketClient {
         guard let response = request(["v": 1, "type": "flush"]),
               response["ok"] as? Bool == true else { return nil }
         return response["cleared"] as? Int ?? 0
+    }
+
+    private static func parseProfiles(_ raw: Any?) -> [Profile] {
+        guard let items = raw as? [Any] else { return [] }
+        return items.compactMap { item in
+            guard let dict = item as? [String: Any],
+                  let id = dict["id"] as? String, !id.isEmpty else { return nil }
+            return Profile(
+                id: id,
+                email: dict["email"] as? String ?? "",
+                organization: dict["organization"] as? String ?? "",
+                api: dict["api"] as? String ?? "",
+                active: dict["active"] as? Bool ?? false,
+                signedIn: dict["signedIn"] as? Bool ?? false
+            )
+        }
     }
 
     private static func request(_ payload: [String: Any]) -> [String: Any]? {

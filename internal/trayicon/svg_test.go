@@ -58,6 +58,37 @@ func TestPNGToICO(t *testing.T) {
 	}
 }
 
+func TestWithStatusDotAddsAmberPixels(t *testing.T) {
+	raw, err := RasterPNG(readWorkspaceSVG(t, "Falcon.svg"), 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dotted, err := WithStatusDot(raw, 255, 159, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err := png.Decode(bytes.NewReader(dotted))
+	if err != nil {
+		t.Fatal(err)
+	}
+	amber := 0
+	b := img.Bounds()
+	for y := b.Max.Y - 40; y < b.Max.Y; y++ {
+		for x := b.Max.X - 40; x < b.Max.X; x++ {
+			r, g, bl, a := img.At(x, y).RGBA()
+			if uint8(a>>8) < 200 {
+				continue
+			}
+			if uint8(r>>8) > 200 && uint8(g>>8) > 100 && uint8(g>>8) < 200 && uint8(bl>>8) < 40 {
+				amber++
+			}
+		}
+	}
+	if amber < 20 {
+		t.Fatalf("expected an amber status dot, found %d pixels", amber)
+	}
+}
+
 func TestParsePathSquare(t *testing.T) {
 	contours, err := parsePath("M0,0 L10,0 L10,10 L0,10 Z")
 	if err != nil {

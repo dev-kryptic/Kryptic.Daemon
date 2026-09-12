@@ -18,11 +18,15 @@ func runFolderScan(item *systray.MenuItem) {
 	if !folderScanBusy.CompareAndSwap(false, true) {
 		return
 	}
-	item.Disable()
+	if item != nil {
+		item.Disable()
+	}
 	defer func() {
 		folderScanBusy.Store(false)
-		item.Enable()
-		item.SetTitle("Scan for secrets")
+		if item != nil {
+			item.Enable()
+			item.SetTitle("Scan for secrets")
+		}
 	}()
 
 	folder, ok := dialog.PickFolder("Scan folder")
@@ -45,7 +49,9 @@ func runFolderScan(item *systray.MenuItem) {
 	}()
 
 	result, err := scan.ScanFolder(ctx, folder, func(percent int, message string) {
-		item.SetTitle(fmt.Sprintf("Scanning… %d%%", percent))
+		if item != nil {
+			item.SetTitle(fmt.Sprintf("Scanning… %d%%", percent))
+		}
 		progress.Set(percent, message)
 	}, server.Version)
 	progress.Close()

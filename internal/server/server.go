@@ -25,6 +25,7 @@ import (
 	"github.com/dev-kryptic/daemon/internal/api"
 	"github.com/dev-kryptic/daemon/internal/applog"
 	"github.com/dev-kryptic/daemon/internal/authstore"
+	"github.com/dev-kryptic/daemon/internal/config"
 	"github.com/dev-kryptic/daemon/internal/ipc"
 	"github.com/dev-kryptic/daemon/internal/notify"
 )
@@ -93,6 +94,8 @@ type request struct {
 	Type        string `json:"type"`
 	ProjectId   string `json:"projectId"`
 	Environment string `json:"environment"`
+	ProfileId   string `json:"profileId"`
+	API         string `json:"api"`
 }
 
 func (s *Server) handle(connection net.Conn) {
@@ -124,6 +127,8 @@ func (s *Server) handle(connection net.Conn) {
 		return
 	}
 
+	s.applyActiveAPI()
+
 	switch req.Type {
 	case "secrets":
 		s.reply(connection, s.handleSecrets(req))
@@ -133,6 +138,12 @@ func (s *Server) handle(connection net.Conn) {
 		s.reply(connection, s.handleFlush())
 	case "reset-auth":
 		s.reply(connection, s.handleResetAuth())
+	case "switch-profile":
+		s.reply(connection, s.handleSwitchProfile(req))
+	case "set-api":
+		s.reply(connection, s.handleSetAPI(req))
+	case "delete-profile":
+		s.reply(connection, s.handleDeleteProfile(req))
 	default:
 		s.reply(connection, errorResponse("internal", "unknown request type"))
 	}
@@ -295,7 +306,9 @@ func (s *Server) handleStatus() map[string]any {
 	base := map[string]any{
 		"ok": true, "authenticated": false, "daemonVersion": Version,
 		"apiUrl": s.client.BaseURL, "orgKeyGranted": true,
+		"connection": "signed_out",
 	}
+	attachProfiles(base)
 
 	token, err := s.token()
 	if err != nil {
@@ -339,6 +352,7 @@ func (s *Server) statusFromFailure(base map[string]any, hasSession bool, err err
 	me := s.lastMe
 	s.mu.Unlock()
 	base["authenticated"] = true
+	base["connection"] = "connected"
 	if me != nil {
 		return statusFromMe(base, me)
 	}
@@ -368,9 +382,103 @@ func statusFromMe(base map[string]any, me *api.Me) map[string]any {
 	base["organization"] = me.Organization
 	base["orgKeyGranted"] = orgKeyGranted
 	if !orgKeyGranted {
+		base["connection"] = "awaiting_approval"
 		notifyMissingOrgKey()
+	} else {
+		base["connection"] = "connected"
 	}
 	return base
+}
+
+func attachProfiles(base map[string]any) {
+	store, err := authstore.LoadStore()
+	if err != nil {
+		base["profiles"] = []map[string]any{}
+		return
+	}
+	list := make([]map[string]any, 0, len(store.Profiles))
+	for _, p := range store.Profiles {
+		list = append(list, map[string]any{
+			"id":           p.ID,
+			"email":        p.Email,
+			"organization": p.Organization,
+			"api":          p.API(),
+			"active":       p.ID == store.ActiveID,
+			"signedIn":     p.SignedIn(),
+		})
+	}
+	base["profiles"] = list
+	if store.ActiveID != "" {
+		base["activeProfileId"] = store.ActiveID
+	}
+}
+
+func (s *Server) handleSwitchProfile(req request) map[string]any {
+	id := strings.TrimSpace(req.ProfileId)
+	if id == "" {
+		return errorResponse("internal", "profileId is required")
+	}
+	if err := authstore.Switch(id); err != nil {
+		if errors.Is(err, authstore.ErrUnknownProfile) {
+			return errorResponse("internal", "unknown profile")
+		}
+		return errorResponse("internal", err.Error())
+	}
+	s.ResetAuth()
+	s.applyActiveAPI()
+	applog.Event("daemon", "auth.profile.switch")
+	return s.handleStatus()
+}
+
+func (s *Server) handleSetAPI(req request) map[string]any {
+	raw := strings.TrimSpace(req.API)
+	if raw == "" {
+		raw = config.DefaultAPI
+	}
+	if err := authstore.SetActiveAPI(raw); err != nil {
+		return errorResponse("internal", err.Error())
+	}
+	s.ResetAuth()
+	s.applyActiveAPI()
+	applog.Event("daemon", "config.api")
+	return s.handleStatus()
+}
+
+func (s *Server) handleDeleteProfile(req request) map[string]any {
+	id := strings.TrimSpace(req.ProfileId)
+	if id == "" {
+		return errorResponse("internal", "profileId is required")
+	}
+	store, err := authstore.LoadStore()
+	if err != nil {
+		return errorResponse("internal", err.Error())
+	}
+	profile, ok := authstore.FindProfile(store, id)
+	if !ok {
+		return errorResponse("internal", "unknown profile")
+	}
+	if profile.RefreshToken != "" {
+		client := api.NewClientFor(profile.API())
+		if tokens, refreshErr := client.Refresh(profile.RefreshToken); refreshErr == nil {
+			_ = client.RevokeDevice(tokens.AccessToken)
+			_ = client.Logout(tokens.AccessToken)
+		}
+	}
+	if err := authstore.Remove(profile.ID); err != nil {
+		return errorResponse("internal", err.Error())
+	}
+	s.ResetAuth()
+	s.applyActiveAPI()
+	applog.Event("daemon", "auth.profile.delete")
+	return s.handleStatus()
+}
+
+func (s *Server) applyActiveAPI() {
+	next := authstore.ResolvedAPI()
+	if s.client.BaseURL == next {
+		return
+	}
+	s.client.BaseURL = next
 }
 
 // pollOrgKeyGrant keeps the missing-grant OS notification alive even when no SDK
@@ -401,6 +509,10 @@ func notifyProjectDenied(projectId, environment, message string) {
 func (s *Server) SetBaseURL(baseURL string) {
 	s.ResetAuth()
 	s.client.BaseURL = baseURL
+}
+
+func (s *Server) SyncActiveAPI() {
+	s.applyActiveAPI()
 }
 
 func (s *Server) invalidateAccessToken() {
@@ -438,6 +550,9 @@ func (s *Server) token() (string, error) {
 		session, err := authstore.LoadSession()
 		if err != nil {
 			return err
+		}
+		if session.RefreshToken == "" {
+			return authstore.ErrNotLoggedIn
 		}
 
 		tokens, err := s.client.Refresh(session.RefreshToken)

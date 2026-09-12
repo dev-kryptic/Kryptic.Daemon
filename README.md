@@ -31,6 +31,9 @@ On macOS and Windows, run the installer from the download page, then `kryptic lo
 
 ```
 kryptic login                 # browser device flow, refresh token -> OS credential store
+kryptic login --add           # sign in another account without leaving the current one
+kryptic profile               # list saved accounts
+kryptic profile switch EMAIL  # switch the active account
 kryptic start                 # run the daemon (launchd/systemd/service manager keeps it alive)
 kryptic stop                  # stop the running daemon
 kryptic status                # daemon + session status
@@ -44,17 +47,27 @@ kryptic scan [PATH] [--staged] [--export [FILE|DIR]]  # scan for leaked secrets 
 kryptic update                # replace this binary with the latest published build
 kryptic update --check        # report whether a newer release exists
 kryptic config                # show the Daemon BFF URL
-kryptic config set-api URL    # point this machine at a different Kryptic server
-kryptic logout
+kryptic config set-api URL    # point the active profile at a different Kryptic server
+kryptic logout                # sign out of the active account (other profiles stay)
+kryptic reset-device          # wipe the active profile's keys (next login needs a new admin grant)
+kryptic reset-device --all    # wipe every profile on this install
+kryptic panel                 # Open Kryptic (Windows/Linux; on macOS use the menu)
 ```
 
 ## How it works
 
 - **Auth**: device flow against the Daemon BFF - the CLI prints a code, the browser
-  approves it, the rotating refresh token is stored in the platform credential store:
-  macOS Keychain (`/usr/bin/security`), Windows Credential Manager (advapi32), or
-  libsecret on Linux (`secret-tool`), with a 0600 file fallback when no store is
-  available. Access tokens (15 min) stay in memory.
+  approves it, the rotating refresh token and device keys are stored in the
+  platform credential store: macOS Keychain (`/usr/bin/security`), Windows
+  Credential Manager (advapi32), or libsecret on Linux (`secret-tool`), with a
+  0600 file fallback when no store is available. Access tokens (15 min) stay in
+  memory. One install can hold several accounts (personal and work). Switching
+  the active profile does not sign the others out. `kryptic logout` keeps the
+  active profile's device keys so the next login on that account does not need
+  a new admin grant. `kryptic reset-device` and uninstall wipe keys. Run
+  `kryptic reset-device --all` before deleting the macOS app so leftover keys
+  cannot reuse trust. The menu-bar and tray icon shows a green, amber, or gray
+  status dot: connected, connecting / awaiting approval, or signed out.
 - **Scanning**: `kryptic scan` runs the gitleaks default ruleset (222 rules) fully
   locally - nothing leaves the machine. A 0-100% progress bar is shown on a TTY
   (hooks and CI stay quiet). Findings are redacted and a non-zero exit code
@@ -80,10 +93,11 @@ kryptic logout
   Linux replaces the CLI and tray in place (a password prompt if they live
   under `/usr`), so App Center is not involved. Reinstall from
   [kryptic.dev/download](https://kryptic.dev/download) if you prefer.
-- **API**: talks to `https://daemon.kryptic.dev`. Set a different Daemon BFF with
-  `kryptic config set-api URL` (or **Server URI** in the menu). `KRYPTIC_API`
-  overrides the saved value, which is how local development points at a BFF on
-  localhost. Changing the URL signs you out, because tokens belong to one server.
+- **API**: each profile talks to its own Daemon BFF (hosted default
+  `https://daemon.kryptic.dev`). Set this profile's URL with
+  `kryptic config set-api URL` or **Server URI**. Add another host with
+  `kryptic login --add --api URL`. `KRYPTIC_API` overrides every profile for
+  that process. Changing one profile's URL signs that profile out only.
 - **Diagnostics**: `kryptic logs` prints `…/kryptic/logs/kryptic.krypticlog`.
   That file records app function (start, token refresh, HTTP status, updates).
   It never contains secrets, tokens, or names. It rotates at 2 MiB with one

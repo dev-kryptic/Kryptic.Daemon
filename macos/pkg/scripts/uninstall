@@ -1,0 +1,17 @@
+#!/bin/bash
+# macOS pkg has no uninstall hook when the app is dragged to Trash.
+# Run this (or `kryptic reset-device`) so leftover keys cannot reuse trust.
+set -euo pipefail
+
+CONSOLE_USER="$(/usr/bin/stat -f %Su /dev/console 2>/dev/null || true)"
+if [[ -z "${CONSOLE_USER}" || "${CONSOLE_USER}" == "root" ]]; then
+  CONSOLE_USER="${USER:-}"
+fi
+
+if [[ -n "${CONSOLE_USER}" && "${CONSOLE_USER}" != "root" ]]; then
+  /usr/bin/sudo -u "${CONSOLE_USER}" /usr/bin/security delete-generic-password \
+    -s dev.kryptic.daemon -a refresh-token >/dev/null 2>&1 || true
+  /bin/rm -f "/Users/${CONSOLE_USER}/Library/Application Support/kryptic/session"
+fi
+
+exit 0

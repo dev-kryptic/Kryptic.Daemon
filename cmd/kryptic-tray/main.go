@@ -4,8 +4,7 @@
 // An externally managed daemon (systemd, `kryptic start`) is detected and left
 // alone; the tray then acts as a remote control for it.
 //
-// The menu is a 1:1 match of the macOS MenuBarExtra: status, sign in/out,
-// Operations, Settings, Help & Support, About, quit.
+// The tray menu is native. Open Kryptic shows the native window.
 package main
 
 import (
@@ -22,10 +21,12 @@ import (
 	"github.com/dev-kryptic/daemon/internal/about"
 	"github.com/dev-kryptic/daemon/internal/api"
 	"github.com/dev-kryptic/daemon/internal/applog"
+	"github.com/dev-kryptic/daemon/internal/authstore"
 	"github.com/dev-kryptic/daemon/internal/config"
 	"github.com/dev-kryptic/daemon/internal/dialog"
 	"github.com/dev-kryptic/daemon/internal/ipc"
 	"github.com/dev-kryptic/daemon/internal/login"
+	"github.com/dev-kryptic/daemon/internal/manageui"
 	"github.com/dev-kryptic/daemon/internal/pidfile"
 	"github.com/dev-kryptic/daemon/internal/server"
 	"github.com/dev-kryptic/daemon/internal/singleinstance"
@@ -56,48 +57,57 @@ func main() {
 }
 
 func onReady() {
+	setTrayConnection(trayConnecting)
 	systray.SetIcon(currentTrayIcon())
-	systray.SetTooltip("Kryptic")
+	systray.SetTooltip(trayTooltip(trayConnecting))
 	go watchTrayTheme()
 	go ensureLauncherIcon()
 	go ensureAutostart()
 
+	statusItem := systray.AddMenuItem("Signed out", "")
+	statusItem.Disable()
 	apiItem := systray.AddMenuItem("", "")
 	apiItem.Disable()
-	showAPI(apiItem, "")
-
-	statusItem := systray.AddMenuItem("Daemon: starting…", "")
-	statusItem.Disable()
-	orgItem := systray.AddMenuItem("", "")
-	orgItem.Disable()
-	orgItem.Hide()
-
 	systray.AddSeparator()
-	codeItem := systray.AddMenuItem("", "")
-	codeItem.Disable()
-	codeItem.Hide()
-	cancelItem := systray.AddMenuItem("Cancel Sign-In", "Stop the browser sign-in")
-	cancelItem.Hide()
+
 	signInItem := systray.AddMenuItem("Sign In…", "Sign in via your browser")
-	signOutItem := systray.AddMenuItem("Sign Out…", "Revoke this device's session")
+	signOutItem := systray.AddMenuItem("Sign Out…", "Sign out of the active account")
+	cancelItem := systray.AddMenuItem("Cancel Sign-In", "")
 	signOutItem.Hide()
+	cancelItem.Hide()
 
+	accountsMenu := systray.AddMenuItem("Accounts", "")
+	const maxProfileItems = 8
+	profileItems := make([]*systray.MenuItem, maxProfileItems)
+	profileIDs := make([]string, maxProfileItems)
+	for i := range profileItems {
+		profileItems[i] = accountsMenu.AddSubMenuItem("Account", "")
+		profileItems[i].Hide()
+	}
+	addAccountItem := accountsMenu.AddSubMenuItem("Add Account…", "")
+	deleteItems := make([]*systray.MenuItem, maxProfileItems)
+	for i := range deleteItems {
+		deleteItems[i] = accountsMenu.AddSubMenuItem("Remove Account", "")
+		deleteItems[i].Hide()
+	}
+
+	openItem := systray.AddMenuItem("Open Kryptic", "Manage accounts, cache, and settings")
 	systray.AddSeparator()
-	operations := systray.AddMenuItem("Operations", "")
-	flushItem := operations.AddSubMenuItem("Refresh Secrets Cache", "Refetch secrets on the next request")
-	flushItem.Disable()
-	scanItem := operations.AddSubMenuItem("Scan for secrets", "Scan a folder for leaked secrets (offline, no sign-in)")
 
-	settings := systray.AddMenuItem("Settings", "")
-	updateItem := settings.AddSubMenuItem("Check for Updates", "Install the latest Kryptic release")
-	serverItem := settings.AddSubMenuItem("Server URI", "Point the daemon at a different Kryptic server")
+	opsMenu := systray.AddMenuItem("Operations", "")
+	flushItem := opsMenu.AddSubMenuItem("Refresh Secrets Cache", "")
+	scanItem := opsMenu.AddSubMenuItem("Scan for secrets", "")
 
-	help := systray.AddMenuItem("Help & Support", "")
-	githubItem := help.AddSubMenuItem("GitHub", "Open the Kryptic GitHub organization")
-	docsItem := help.AddSubMenuItem("Documentation", "Open docs.kryptic.dev")
-	logsItem := help.AddSubMenuItem("Reveal Diagnostics Log", "Open the support log file")
+	settingsMenu := systray.AddMenuItem("Settings", "")
+	updateItem := settingsMenu.AddSubMenuItem("Check for Updates", "")
+	serverItem := settingsMenu.AddSubMenuItem("Server URI", "")
 
-	aboutItem := systray.AddMenuItem("About Kryptic", "About Kryptic")
+	helpMenu := systray.AddMenuItem("Help & Support", "")
+	githubItem := helpMenu.AddSubMenuItem("GitHub", "")
+	docsItem := helpMenu.AddSubMenuItem("Documentation", "")
+	logsItem := helpMenu.AddSubMenuItem("Reveal Diagnostics Log", "")
+
+	aboutItem := systray.AddMenuItem("About Kryptic", "")
 	systray.AddSeparator()
 	quitItem := systray.AddMenuItem("Quit Kryptic", "")
 
@@ -121,173 +131,330 @@ func onReady() {
 	var loginInProgress atomic.Bool
 	var loginMu sync.Mutex
 	var loginCancel context.CancelFunc
+	var lastIconKind string
+	panel := &panelState{}
+	panel.setUpdateTitle("Check for Updates")
+
+	applyIcon := func(kind string) {
+		if kind == lastIconKind {
+			return
+		}
+		lastIconKind = kind
+		setTrayConnection(kind)
+		systray.SetIcon(currentTrayIcon())
+		systray.SetTooltip(trayTooltip(kind))
+	}
+
+	var startLogin func(add bool)
 
 	refresh := func() {
 		response, err := ipc.Request(map[string]any{"type": "status"})
 		if err != nil {
-			statusItem.SetTitle("Daemon: starting…")
-			orgItem.Hide()
-			flushItem.Disable()
+			kind := trayConnecting
+			applyIcon(kind)
+			panel.setStatus(kind, "", "", "", false, false, nil)
 			if !loginInProgress.Load() {
 				signOutItem.Hide()
+				cancelItem.Hide()
 				signInItem.Show()
 			}
+			statusItem.SetTitle("Connecting…")
 			return
 		}
 
-		flushItem.Enable()
-		if apiURL, ok := response["apiUrl"].(string); ok {
-			showAPI(apiItem, apiURL)
+		apiURL, _ := response["apiUrl"].(string)
+		if apiURL == "" {
+			apiURL = authstore.ResolvedAPI()
 		}
-		switch {
-		case response["authenticated"] == true:
-			granted, hasGrantField := response["orgKeyGranted"].(bool)
-			if hasGrantField && !granted {
-				statusItem.SetTitle("Daemon: online - waiting for organization key")
-			} else if email, ok := response["email"].(string); ok && email != "" {
-				statusItem.SetTitle("Daemon: online - " + email)
+		client.BaseURL = apiURL
+		kind, _ := response["connection"].(string)
+		if loginInProgress.Load() {
+			kind = trayConnecting
+		}
+		if kind == "" {
+			if response["authenticated"] == true {
+				kind = trayConnected
 			} else {
-				statusItem.SetTitle("Daemon: online - signed in")
+				kind = traySignedOut
 			}
-			if org, ok := response["organization"].(string); ok && org != "" {
-				orgItem.SetTitle(org)
-				orgItem.Show()
+		}
+		email, _ := response["email"].(string)
+		org, _ := response["organization"].(string)
+		applyIcon(kind)
+		profiles := manageui.ProfilesFromStatus(response["profiles"])
+		panel.setStatus(kind, email, org, apiURL, response["authenticated"] == true, true, profiles)
+
+		label := manageui.ConnectionLabel(kind, email)
+		if email != "" {
+			label += " · " + email
+		}
+		statusItem.SetTitle(label)
+		if apiURL != "" {
+			apiItem.SetTitle(manageui.HostLabel(apiURL))
+			apiItem.Show()
+		} else {
+			apiItem.Hide()
+		}
+
+		shown := 0
+		for _, profile := range profiles {
+			if shown >= maxProfileItems {
+				break
+			}
+			profileItems[shown].SetTitle(profile.Title())
+			profileItems[shown].Show()
+			if profile.Active {
+				profileItems[shown].Disable()
 			} else {
-				orgItem.Hide()
+				profileItems[shown].Enable()
 			}
-			if !loginInProgress.Load() {
-				signInItem.Hide()
-				signOutItem.Show()
+			profileIDs[shown] = profile.ID
+			name := profile.Email
+			if name == "" {
+				name = profile.ID
 			}
-		default:
-			statusItem.SetTitle("Daemon: online - not signed in")
-			orgItem.Hide()
-			if !loginInProgress.Load() {
-				signOutItem.Hide()
-				signInItem.Show()
-			}
+			deleteItems[shown].SetTitle("Remove " + name)
+			deleteItems[shown].Show()
+			shown++
+		}
+		for i := shown; i < maxProfileItems; i++ {
+			profileItems[i].Hide()
+			deleteItems[i].Hide()
+			profileIDs[i] = ""
+		}
+
+		if loginInProgress.Load() {
+			signInItem.Hide()
+			signOutItem.Hide()
+			cancelItem.Show()
+		} else if response["authenticated"] == true {
+			signInItem.Hide()
+			cancelItem.Hide()
+			signOutItem.Show()
+		} else {
+			signOutItem.Hide()
+			cancelItem.Hide()
+			signInItem.Show()
 		}
 	}
 
-	go func() {
-		time.Sleep(500 * time.Millisecond)
-		refresh()
-
-		ticker := time.NewTicker(3 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				refresh()
-
-			case <-scanItem.ClickedCh:
-				go runFolderScan(scanItem)
-
-			case <-signInItem.ClickedCh:
-				loginMu.Lock()
-				if loginCancel != nil {
-					loginMu.Unlock()
-					continue
+	startLogin = func(add bool) {
+		loginClient := client
+		if add {
+			if config.EnvOverrides() {
+				dialog.Info("Kryptic", "KRYPTIC_API is set and overrides the server URI for new accounts.")
+			} else {
+				def, _ := config.API()
+				value, ok := dialog.Prompt("Kryptic", "Server URI for the new account", def)
+				if !ok {
+					return
 				}
-				ctx, cancel := context.WithCancel(context.Background())
-				loginCancel = cancel
+				value = strings.TrimSpace(value)
+				if value == "" {
+					value = config.DefaultAPI
+				}
+				normalized, err := config.NormalizeAPI(value)
+				if err != nil {
+					dialog.Info("Kryptic", err.Error())
+					return
+				}
+				loginClient = api.NewClientFor(normalized)
+			}
+		} else {
+			loginClient = api.NewClientFor(authstore.ResolvedAPI())
+		}
+
+		loginMu.Lock()
+		if loginCancel != nil {
+			loginMu.Unlock()
+			return
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		loginCancel = cancel
+		loginMu.Unlock()
+
+		loginInProgress.Store(true)
+		signInItem.Hide()
+		signOutItem.Hide()
+		cancelItem.Show()
+		applyIcon(trayConnecting)
+		panel.setLogin(true, "", "")
+
+		go func() {
+			defer func() {
+				loginMu.Lock()
+				loginCancel = nil
 				loginMu.Unlock()
+				loginInProgress.Store(false)
+				panel.setLogin(false, "", "")
+				refresh()
+			}()
 
-				loginInProgress.Store(true)
-				signInItem.Hide()
-				signOutItem.Hide()
-				cancelItem.Show()
-				codeItem.Hide()
+			_, err := login.RunContext(ctx, loginClient, func(userCode, _ string) {
+				panel.setLogin(true, userCode, "")
+			}, add)
+			switch {
+			case err == nil, errors.Is(err, context.Canceled):
+				panel.setLogin(false, "", "")
+			default:
+				panel.setLogin(false, "", err.Error())
+			}
+		}()
+	}
 
-				go func() {
-					defer func() {
-						loginMu.Lock()
-						loginCancel = nil
-						loginMu.Unlock()
-						loginInProgress.Store(false)
-						cancelItem.Hide()
-						refresh()
-					}()
+	doSignOut := func() {
+		if !dialog.Confirm("Kryptic",
+			"Signing out ends this account's session and drops secrets from memory. "+
+				"Other saved accounts stay signed in. This machine's keys stay, so the next "+
+				"sign-in does not need a new admin grant unless durable device trust is off.\n\nSign out?") {
+			return
+		}
+		_ = login.Logout(client)
+		if ownedServer != nil {
+			ownedServer.ResetAuth()
+		}
+		refresh()
+	}
 
-					_, err := login.RunContext(ctx, client, func(userCode, _ string) {
-						codeItem.SetTitle("Confirm code in browser: " + userCode)
-						codeItem.Show()
-					})
-					switch {
-					case err == nil, errors.Is(err, context.Canceled):
-						codeItem.Hide()
-					default:
-						codeItem.SetTitle("⚠️ " + err.Error())
-						codeItem.Show()
-					}
-				}()
+	doQuit := func() {
+		if wrotePidfile {
+			pidfile.Remove()
+		}
+		systray.Quit()
+	}
 
-			case <-cancelItem.ClickedCh:
+	doSwitch := func(id string) {
+		if id == "" {
+			return
+		}
+		_, _ = ipc.Request(map[string]any{"type": "switch-profile", "profileId": id})
+		if ownedServer != nil {
+			ownedServer.ResetAuth()
+			ownedServer.SyncActiveAPI()
+		}
+		refresh()
+	}
+
+	doDelete := func(id string) {
+		if id == "" {
+			return
+		}
+		if !dialog.Confirm("Kryptic",
+			"This removes that account from this install and revokes its device on that server. Other profiles are not touched.") {
+			return
+		}
+		_, _ = ipc.Request(map[string]any{"type": "delete-profile", "profileId": id})
+		if ownedServer != nil {
+			ownedServer.ResetAuth()
+			ownedServer.SyncActiveAPI()
+		}
+		refresh()
+	}
+
+	handlers := manageui.Handlers{
+		Snapshot: panel.snapshot,
+		Action: func(name, arg string) {
+			switch name {
+			case "signIn":
+				startLogin(false)
+			case "addAccount":
+				startLogin(true)
+			case "cancelLogin":
 				loginMu.Lock()
 				if loginCancel != nil {
 					loginCancel()
 				}
 				loginMu.Unlock()
-
-			case <-signOutItem.ClickedCh:
-				go func() {
-					// Signing out destroys the device key, so the org-key
-					// grant is lost for good - never do it silently.
-					if !dialog.Confirm("Kryptic",
-						"Signing out deletes this device's encryption key. "+
-							"When you sign in again, an admin must grant the organization key "+
-							"to this device again before it can decrypt any secrets.\n\nSign out?") {
-						return
-					}
-					_ = login.Logout(client)
-					if ownedServer != nil {
-						ownedServer.ResetAuth()
-					}
-					refresh()
-				}()
-
-			case <-flushItem.ClickedCh:
-				go func() {
-					_, _ = ipc.Request(map[string]any{"type": "flush"})
-				}()
-
-			case <-updateItem.ClickedCh:
-				go runUpdateFlow(updateItem)
-
-			case <-serverItem.ClickedCh:
-				go func() {
-					changeServerURL(client, ownedServer)
-					showAPI(apiItem, client.BaseURL)
-					refresh()
-				}()
-
-			case <-githubItem.ClickedCh:
+			case "signOut":
+				doSignOut()
+			case "switchProfile":
+				doSwitch(arg)
+			case "deleteProfile":
+				doDelete(arg)
+			case "flush":
+				_, _ = ipc.Request(map[string]any{"type": "flush"})
+			case "scan":
+				panel.setScan(true)
+				runFolderScan(scanItem)
+				panel.setScan(false)
+			case "update":
+				panel.setUpdateTitle("Checking for Updates…")
+				runUpdateFlow(updateItem)
+				panel.setUpdateTitle("Check for Updates")
+			case "serverURI":
+				changeServerURL(client, ownedServer)
+				refresh()
+			case "github":
 				about.OpenGitHub()
-
-			case <-docsItem.ClickedCh:
+			case "docs":
 				about.OpenDocs()
-
-			case <-aboutItem.ClickedCh:
-				about.Show()
-
-			case <-logsItem.ClickedCh:
-				go func() {
-					if err := applog.Reveal(); err != nil {
-						dialog.Info("Kryptic", "Could not open the diagnostics log.")
-					}
-				}()
-
-			case <-quitItem.ClickedCh:
-				if wrotePidfile {
-					pidfile.Remove()
+			case "logs":
+				if err := applog.Reveal(); err != nil {
+					dialog.Info("Kryptic", "Could not open the diagnostics log.")
 				}
-				systray.Quit()
-				return
+			case "about":
+				about.Show()
+			case "quit":
+				doQuit()
 			}
+		},
+	}
+	openWindow := func() {
+		manageui.Show(handlers)
+	}
+	systray.SetOnTapped(openWindow)
+
+	listen := func(item *systray.MenuItem, fn func()) {
+		go func() {
+			for range item.ClickedCh {
+				fn()
+			}
+		}()
+	}
+	listen(openItem, openWindow)
+	listen(signInItem, func() { startLogin(false) })
+	listen(signOutItem, func() { go doSignOut() })
+	listen(cancelItem, func() {
+		loginMu.Lock()
+		if loginCancel != nil {
+			loginCancel()
+		}
+		loginMu.Unlock()
+	})
+	listen(addAccountItem, func() { startLogin(true) })
+	listen(flushItem, func() { _, _ = ipc.Request(map[string]any{"type": "flush"}) })
+	listen(scanItem, func() { runFolderScan(scanItem) })
+	listen(updateItem, func() { runUpdateFlow(updateItem) })
+	listen(serverItem, func() {
+		changeServerURL(client, ownedServer)
+		refresh()
+	})
+	listen(githubItem, about.OpenGitHub)
+	listen(docsItem, about.OpenDocs)
+	listen(logsItem, func() {
+		if err := applog.Reveal(); err != nil {
+			dialog.Info("Kryptic", "Could not open the diagnostics log.")
+		}
+	})
+	listen(aboutItem, about.Show)
+	listen(quitItem, doQuit)
+	for i := range profileItems {
+		i := i
+		listen(profileItems[i], func() { doSwitch(profileIDs[i]) })
+		listen(deleteItems[i], func() { doDelete(profileIDs[i]) })
+	}
+
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		refresh()
+		ticker := time.NewTicker(3 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			refresh()
 		}
 	}()
 
-	go watchForUpdates(updateItem)
+	go watchForUpdates(panel, updateItem)
 }
 
 // shouldStartInProcess is true when nothing is serving the socket, or when the
@@ -318,30 +485,29 @@ func shouldStartInProcess() bool {
 	return true
 }
 
-func showAPI(item *systray.MenuItem, reported string) {
-	url := reported
-	if url == "" {
-		url, _ = config.API()
-	}
-	item.SetTitle("API: " + url)
-	item.Show()
-}
-
-func watchForUpdates(item *systray.MenuItem) {
+func watchForUpdates(panel *panelState, item *systray.MenuItem) {
 	time.Sleep(8 * time.Second)
 	for {
 		result, err := update.Check(server.Version)
 		if err == nil && result.Newer {
-			item.SetTitle("Update Available…")
+			panel.setUpdateTitle("Update Available…")
+			if item != nil {
+				item.SetTitle("Update Available…")
+			}
 		}
 		time.Sleep(12 * time.Hour)
 	}
 }
 
 func runUpdateFlow(item *systray.MenuItem) {
-	item.SetTitle("Checking for Updates…")
+	setUpdate := func(title string) {
+		if item != nil {
+			item.SetTitle(title)
+		}
+	}
+	setUpdate("Checking for Updates…")
 	result, err := update.Check(server.Version)
-	item.SetTitle("Check for Updates")
+	setUpdate("Check for Updates")
 	if err != nil {
 		dialog.Info("Kryptic", "Could not check for updates: "+err.Error())
 		return
@@ -352,17 +518,17 @@ func runUpdateFlow(item *systray.MenuItem) {
 	}
 	message := fmt.Sprintf("Version %s is available (you have %s). Update now?", result.Latest, result.Current)
 	if !dialog.Confirm("Kryptic", message) {
-		item.SetTitle("Update Available…")
+		setUpdate("Update Available…")
 		return
 	}
-	item.SetTitle("Updating…")
+	setUpdate("Updating…")
 	var progress dialog.Progress
 	if !update.PreferInstaller() {
 		progress = dialog.OpenProgress("Kryptic", "Updating…")
 		defer progress.Close()
 	}
 	err = update.ApplyWithProgress(server.Version, func(percent int, message string) {
-		item.SetTitle(fmt.Sprintf("Updating… %d%%", percent))
+		setUpdate(fmt.Sprintf("Updating… %d%%", percent))
 		if progress != nil {
 			progress.Set(percent, message)
 		}
@@ -370,10 +536,10 @@ func runUpdateFlow(item *systray.MenuItem) {
 	if progress != nil {
 		progress.Close()
 	}
-	item.SetTitle("Check for Updates")
+	setUpdate("Check for Updates")
 	if err != nil {
 		dialog.Info("Kryptic", "Update failed: "+err.Error())
-		item.SetTitle("Update Available…")
+		setUpdate("Update Available…")
 		return
 	}
 	if update.PreferInstaller() {
@@ -386,11 +552,11 @@ func runUpdateFlow(item *systray.MenuItem) {
 
 func changeServerURL(client *api.Client, owned *server.Server) {
 	if config.EnvOverrides() {
-		dialog.Info("Kryptic", "KRYPTIC_API is set in the environment and overrides the saved URL.")
+		dialog.Info("Kryptic", "KRYPTIC_API is set in the environment and overrides every profile's URL.")
 		return
 	}
-	current, _ := config.API()
-	value, ok := dialog.Prompt("Kryptic", "Daemon server URI", current)
+	current := authstore.ResolvedAPI()
+	value, ok := dialog.Prompt("Kryptic", "Server URI for this profile", current)
 	if !ok {
 		return
 	}
@@ -409,25 +575,15 @@ func changeServerURL(client *api.Client, owned *server.Server) {
 	if next == current {
 		return
 	}
-	if !dialog.Confirm("Kryptic", "Changing the server signs you out of the current one. Continue?") {
+	if !dialog.Confirm("Kryptic", "This signs this profile out of the previous server. Other profiles keep their URL and session.") {
 		return
 	}
-	_ = login.Logout(api.NewClientFor(current))
-	var err error
-	if next == config.DefaultAPI {
-		err = config.ResetAPI()
-	} else {
-		err = config.SetAPI(next)
-	}
-	if err != nil {
+	if err := login.SetActiveAPI(next); err != nil {
 		dialog.Info("Kryptic", err.Error())
 		return
 	}
-	next, _ = config.API()
 	client.BaseURL = next
 	if owned != nil {
 		owned.SetBaseURL(next)
-		return
 	}
-	update.RestartDaemon()
 }

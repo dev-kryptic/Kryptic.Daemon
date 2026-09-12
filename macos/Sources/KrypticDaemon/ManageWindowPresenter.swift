@@ -2,22 +2,21 @@ import AppKit
 import SwiftUI
 
 @MainActor
-enum AboutWindowPresenter {
+enum ManageWindowPresenter {
     private static var window: NSWindow?
 
-    static func show(version: String? = nil) {
-        let content = NSHostingView(rootView: AboutView(version: version))
-        content.frame = NSRect(x: 0, y: 0, width: 380, height: 430)
+    static func show(appState: AppState) {
+        let content = NSHostingView(rootView: ManageWindow(appState: appState))
+        content.frame = NSRect(x: 0, y: 0, width: 380, height: 640)
 
         if window == nil {
-            let panel = NSPanel(
+            let panel = NSWindow(
                 contentRect: content.frame,
-                styleMask: [.titled, .closable, .fullSizeContentView],
+                styleMask: [.titled, .closable],
                 backing: .buffered,
                 defer: false
             )
-            panel.title = "About Kryptic"
-            panel.titlebarAppearsTransparent = true
+            panel.title = "Open Kryptic"
             panel.isReleasedWhenClosed = false
             panel.center()
             window = panel
@@ -25,7 +24,6 @@ enum AboutWindowPresenter {
 
         window?.contentView = content
         NSApplication.shared.activate(ignoringOtherApps: true)
-        window?.center()
         window?.makeKeyAndOrderFront(nil)
     }
 }

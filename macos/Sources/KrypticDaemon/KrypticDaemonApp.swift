@@ -22,7 +22,7 @@ struct KrypticDaemonApp: App {
         MenuBarExtra {
             MenuBarContent(appState: appState)
         } label: {
-            MenuBarFalcon()
+            MenuBarFalcon(connection: appState.menuConnection)
         }
         .menuBarExtraStyle(.menu)
     }
@@ -37,13 +37,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AppDelegate.shared?.shutdown()
         }
     }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
 }
 
 private struct MenuBarFalcon: View {
     @Environment(\.colorScheme) private var colorScheme
+    let connection: SocketClient.Connection
 
     var body: some View {
-        if let icon = MenuBarIcon.image(darkAppearance: colorScheme == .dark) {
+        if let icon = MenuBarIcon.image(darkAppearance: colorScheme == .dark, connection: connection) {
             Image(nsImage: icon)
                 .resizable()
                 .interpolation(.high)
@@ -64,6 +69,34 @@ private struct MenuBarContent: View {
             Divider()
 
             signInSection
+
+            Menu("Accounts") {
+                ForEach(appState.status.profiles) { profile in
+                    Button {
+                        appState.switchProfile(profile.id)
+                    } label: {
+                        Text(profile.active ? "✓ \(profile.title)" : profile.title)
+                    }
+                    .disabled(profile.active)
+                }
+                if !appState.status.profiles.isEmpty {
+                    Divider()
+                    ForEach(appState.status.profiles) { profile in
+                        Button("Remove \(profile.email.isEmpty ? profile.id : profile.email)…") {
+                            appState.deleteProfile(profile.id)
+                        }
+                    }
+                    Divider()
+                }
+                Button("Add Account…") {
+                    appState.login(addAccount: true)
+                }
+                .disabled(!appState.binaryAvailable || appState.loginInProgress)
+            }
+
+            Button("Open Kryptic") {
+                ManageWindowPresenter.show(appState: appState)
+            }
 
             Divider()
 
@@ -135,7 +168,7 @@ private struct MenuBarContent: View {
                 Text("⚠️ \(error)")
             }
             Button("Sign In…") {
-                appState.login()
+                appState.login(addAccount: false)
             }
             .disabled(!appState.binaryAvailable)
         }
@@ -143,26 +176,33 @@ private struct MenuBarContent: View {
 
     @ViewBuilder
     private var statusSection: some View {
-        Text("API: \(appState.status.apiUrl ?? appState.displayAPI)")
+        Text(HostLabel.display(appState.status.apiUrl ?? appState.displayAPI))
         if !appState.binaryAvailable {
             Text("kryptic binary not found")
-        } else if !appState.status.running {
-            if let error = appState.spawnError {
-                Text("Daemon: failed to start")
-                Text(error)
-            } else {
-                Text("Daemon: starting…")
-            }
-        } else if appState.status.authenticated {
-            Text("Daemon: online - \(appState.status.email ?? "signed in")")
-            if !appState.status.orgKeyGranted {
-                Text("Waiting for organization-key grant")
-            }
-            if let organization = appState.status.organization {
+        } else {
+            Text(menuStatusLabel)
+            if appState.status.authenticated, let organization = appState.status.organization {
                 Text(organization)
             }
-        } else {
-            Text("Daemon: online - not signed in")
+            if let error = appState.spawnError, !appState.status.running {
+                Text(error)
+            }
+        }
+    }
+
+    private var menuStatusLabel: String {
+        switch appState.menuConnection {
+        case .connecting:
+            return "🟠 \(appState.connectionLabel)"
+        case .awaitingApproval:
+            return "🟠 \(appState.connectionLabel)"
+        case .connected:
+            if let email = appState.status.email, !email.isEmpty {
+                return "🟢 \(appState.connectionLabel) · \(email)"
+            }
+            return "🟢 \(appState.connectionLabel)"
+        case .signedOut:
+            return "⚪ \(appState.connectionLabel)"
         }
     }
 }

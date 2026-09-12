@@ -1,5 +1,5 @@
 // Package about is the About Kryptic panel shared by the macOS menu-bar app
-// copy and the Windows/Linux tray. Same title, tagline, blurb, and website
+// copy and the Windows/Linux tray. The same title, tagline, blurb, and website
 // on every platform.
 package about
 
@@ -11,10 +11,14 @@ import (
 )
 
 const (
-	WindowTitle  = "About Kryptic"
-	AppName      = "Kryptic"
-	Tagline      = "Zero-friction secrets management"
-	Blurb        = "Authenticate once. Every project on this machine works. No prefix commands, no .env files."
+	WindowTitle       = "About Kryptic"
+	AppName           = "Kryptic"
+	Tagline           = "Zero-friction secrets management"
+	Blurb             = "Authenticate once. Every project on this machine works. No prefix commands, no .env files."
+	StatusLegend      = "● Connected\n● Connecting / awaiting approval\n○ Signed out"
+	StatusLegendPango = "<span foreground='#30d158'>●</span> Connected\n" +
+		"<span foreground='#ff9f0a'>●</span> Connecting / awaiting approval\n" +
+		"<span foreground='#8e8e93'>○</span> Signed out"
 	WebsiteLabel = "kryptic.dev"
 	WebsiteURL   = "https://kryptic.dev"
 	GitHubURL    = "https://github.com/dev-kryptic"

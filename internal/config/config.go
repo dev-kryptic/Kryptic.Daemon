@@ -15,6 +15,7 @@ const (
 	DefaultAPI = "https://daemon.kryptic.dev"
 
 	SourceEnvironment = "environment"
+	SourceProfile     = "profile"
 	SourceFile        = "config"
 	SourceDefault     = "default"
 )
@@ -102,14 +103,23 @@ func NormalizeAPI(raw string) (string, error) {
 	return strings.TrimRight(parsed.String(), "/"), nil
 }
 
-// API returns the Daemon BFF the process should talk to, and where that
-// value came from.
+// API is the install default: KRYPTIC_API, then config.json, then hosted.
 func API() (string, string) {
+	return Resolve("")
+}
+
+// Resolve picks the Daemon BFF for one profile. KRYPTIC_API still wins for
+// the whole process. An empty profile API falls through to config.json, then
+// the hosted default.
+func Resolve(profileAPI string) (string, string) {
 	if override := strings.TrimSpace(os.Getenv("KRYPTIC_API")); override != "" {
 		if normalized, err := NormalizeAPI(override); err == nil {
 			return normalized, SourceEnvironment
 		}
 		return strings.TrimRight(override, "/"), SourceEnvironment
+	}
+	if normalized, err := NormalizeAPI(profileAPI); err == nil {
+		return normalized, SourceProfile
 	}
 	file, err := Load()
 	if err == nil {
@@ -118,6 +128,18 @@ func API() (string, string) {
 		}
 	}
 	return DefaultAPI, SourceDefault
+}
+
+// InstallDefault is config.json or the hosted URL, ignoring KRYPTIC_API and
+// any profile. Used to migrate older profiles and as the --add default.
+func InstallDefault() string {
+	file, err := Load()
+	if err == nil {
+		if normalized, err := NormalizeAPI(file.API); err == nil {
+			return normalized
+		}
+	}
+	return DefaultAPI
 }
 
 // SetAPI writes the Daemon BFF URL. It does not touch the login session;

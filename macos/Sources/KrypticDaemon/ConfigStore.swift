@@ -54,20 +54,25 @@ enum ConfigStore {
         try save(file)
     }
 
-    /// The URL the menu should show. Matches Go: env, then file, then default
-    /// (debug builds default to the local Daemon BFF).
+    /// Install default for a new profile: env, then config.json, then hosted
+    /// (debug builds seed config.json with the local Daemon BFF once).
     static var displayAPI: String {
         if let explicit = ProcessInfo.processInfo.environment["KRYPTIC_API"],
            !explicit.isEmpty {
             return explicit
         }
+        ensureDebugInstallDefault()
         if let saved = savedAPI {
             return saved
         }
-        #if DEBUG
-        return "http://localhost:5237"
-        #else
         return "https://daemon.kryptic.dev"
+    }
+
+    static func ensureDebugInstallDefault() {
+        #if DEBUG
+        if savedAPI == nil, ProcessInfo.processInfo.environment["KRYPTIC_API"]?.isEmpty != false {
+            try? setAPI("http://localhost:5237")
+        }
         #endif
     }
 

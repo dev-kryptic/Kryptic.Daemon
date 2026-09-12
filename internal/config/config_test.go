@@ -63,3 +63,21 @@ func TestAPIResolution(t *testing.T) {
 		t.Fatal("expected config.json to remain after reset")
 	}
 }
+
+func TestResolvePrefersProfileOverFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("KRYPTIC_CONFIG_DIR", dir)
+	t.Setenv("KRYPTIC_API", "")
+
+	if err := SetAPI("https://install-default.example"); err != nil {
+		t.Fatal(err)
+	}
+	url, source := Resolve("https://profile.example")
+	if url != "https://profile.example" || source != SourceProfile {
+		t.Fatalf("profile: got %s (%s)", url, source)
+	}
+	url, source = Resolve("")
+	if url != "https://install-default.example" || source != SourceFile {
+		t.Fatalf("empty profile should use file: got %s (%s)", url, source)
+	}
+}

@@ -1,6 +1,14 @@
 #!/bin/sh
 set -e
 
+wipe_device_keys() {
+  u="$1"
+  home=$(getent passwd "$u" | cut -d: -f6)
+  [ -n "$home" ] || return 0
+  rm -f "$home/.config/kryptic/session"
+  sudo -u "$u" secret-tool clear service dev.kryptic.daemon account refresh-token 2>/dev/null || true
+}
+
 stop_user() {
   u="$1"
   uid=$(id -u "$u") || return 0
@@ -8,6 +16,7 @@ stop_user() {
   sudo -u "$u" -E systemctl --user disable --now kryptic-daemon 2>/dev/null || true
   pkill -u "$u" -x kryptic-tray 2>/dev/null || true
   pkill -u "$u" -x kryptic 2>/dev/null || true
+  wipe_device_keys "$u"
 }
 
 if [ "$1" = "remove" ] || [ "$1" = "deconfigure" ]; then

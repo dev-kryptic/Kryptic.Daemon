@@ -14,6 +14,7 @@ import (
 
 	"github.com/dev-kryptic/Kryptic.Encryption.Go/kdf"
 	"github.com/dev-kryptic/daemon/internal/applog"
+	"github.com/dev-kryptic/daemon/internal/authstore"
 	"github.com/dev-kryptic/daemon/internal/config"
 )
 
@@ -31,8 +32,7 @@ type Client struct {
 }
 
 func NewClient() *Client {
-	base, _ := config.API()
-	return NewClientFor(base)
+	return NewClientFor(authstore.ResolvedAPI())
 }
 
 // NewClientFor points at an explicit Daemon BFF, ignoring config and env.
@@ -63,6 +63,7 @@ type DeviceStart struct {
 	VerificationUrl     string `json:"verificationUrl"`
 	ExpiresInSeconds    int    `json:"expiresInSeconds"`
 	PollIntervalSeconds int    `json:"pollIntervalSeconds"`
+	Challenge           string `json:"challenge"`
 }
 
 type Tokens struct {
@@ -131,8 +132,12 @@ func (c *Client) DeviceStart(deviceName, platform, version, devicePublicKey stri
 }
 
 // DevicePoll returns (nil, nil) while the approval is still pending.
-func (c *Client) DevicePoll(deviceCode string) (*Tokens, error) {
-	body, _ := json.Marshal(map[string]string{"deviceCode": deviceCode})
+func (c *Client) DevicePoll(deviceCode, challengeSignature string) (*Tokens, error) {
+	payload := map[string]string{"deviceCode": deviceCode}
+	if challengeSignature != "" {
+		payload["challengeSignature"] = challengeSignature
+	}
+	body, _ := json.Marshal(payload)
 	response, err := c.HTTP.Post(c.BaseURL+"/api/auth/device/poll", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -157,6 +162,10 @@ func (c *Client) Refresh(refreshToken string) (*Tokens, error) {
 
 func (c *Client) Logout(accessToken string) error {
 	return c.post("/api/auth/logout", accessToken, map[string]string{}, nil)
+}
+
+func (c *Client) RevokeDevice(accessToken string) error {
+	return c.post("/api/auth/device/revoke", accessToken, map[string]string{}, nil)
 }
 
 func (c *Client) Me(accessToken string) (*Me, error) {

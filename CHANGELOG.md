@@ -5,6 +5,35 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+### Added
+
+- Multiple accounts on one install. `kryptic login --add`, `kryptic profile`,
+  `kryptic profile switch`, and `kryptic profile delete` keep personal and
+  work sessions side by side. Each profile has its own config, including
+  Daemon BFF URL, so cloud and self-host can live on the same machine.
+  Sign-out and `kryptic reset-device` apply to the active profile;
+  `kryptic reset-device --all` wipes every profile.
+- Menu-bar and tray status dot: green when connected, amber while connecting
+  or awaiting an organization-key grant, gray when signed out.
+- Open Kryptic on macOS (SwiftUI), Windows (Win32), and Linux
+  (system dialogs). Choose it from the menu bar or tray, or run
+  `kryptic panel` on Windows and Linux.
+- Device keys persist across `kryptic logout`. `kryptic reset-device` deletes
+  them and revokes the machine so the next login needs a new admin grant.
+- Device-flow poll signs the start challenge so the platform can prove this
+  install still holds the private key.
+
+### Changed
+
+- `kryptic login` reuses an existing OS-user key pair instead of generating one
+  every time. Uninstall (deb prerm) wipes leftover keys.
+- `kryptic config set-api` and Server URI edit the active profile only.
+  Other profiles keep their URL and session. `kryptic login --add --api URL`
+  creates a new profile against that host.
+- Open Kryptic title, Sign In / Sign Out verbs, hover trash to remove an
+  account, Kryptic Cloud as the first Server URI option, and a status-dot
+  legend in About.
+
 ### Fixed
 
 - Debug builds and local docs point the daemon at the IDE Daemon BFF

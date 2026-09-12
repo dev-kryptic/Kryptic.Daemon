@@ -2,52 +2,71 @@ import AppKit
 
 @MainActor
 enum ServerURLPresenter {
-    /// Returns the URL to save, or nil if the user cancelled.
-    static func request() -> String? {
+    /// Edit the active profile's Daemon BFF. Changing it signs that profile out only.
+    static func request(current: String) -> String? {
+        prompt(
+            title: "Server URI",
+            message: "The Daemon BFF for this profile. Cloud and self-host can live side by side. Changing this URL signs this profile out only.",
+            current: current,
+            confirmChange: true
+        )
+    }
+
+    /// Ask which server a new account should use, before the browser sign-in.
+    static func requestForNewAccount() -> String? {
+        prompt(
+            title: "New account server",
+            message: "Which Daemon BFF should this account use? Use the hosted URL for cloud, or your company's self-hosted URI.",
+            current: ConfigStore.displayAPI,
+            confirmChange: false
+        )
+    }
+
+    private static func prompt(title: String, message: String, current: String, confirmChange: Bool) -> String? {
         if ConfigStore.envOverrides {
-            alert(
-                "KRYPTIC_API is set in the environment and overrides the saved URL."
-            )
+            alert("KRYPTIC_API is set in the environment and overrides every profile's URL.")
             return nil
         }
 
-        let field = NSTextField(string: ConfigStore.displayAPI)
+        let field = NSTextField(string: current)
         field.placeholderString = "https://daemon.kryptic.dev"
         field.frame = NSRect(x: 0, y: 0, width: 340, height: 24)
 
         let prompt = NSAlert()
-        prompt.messageText = "Server URI"
-        prompt.informativeText = "The Daemon BFF this app talks to. Changing it signs you out."
+        prompt.messageText = title
+        prompt.informativeText = message
         prompt.alertStyle = .informational
         prompt.accessoryView = field
+        prompt.addButton(withTitle: "Kryptic Cloud")
         prompt.addButton(withTitle: "Save")
-        prompt.addButton(withTitle: "Use Default")
         prompt.addButton(withTitle: "Cancel")
         NSApplication.shared.activate(ignoringOtherApps: true)
         let response = prompt.runModal()
 
-        let current = ConfigStore.displayAPI
         let next: String
         switch response {
         case .alertFirstButtonReturn:
+            next = HostLabel.cloudAPI
+        case .alertSecondButtonReturn:
             guard let normalized = normalized(field.stringValue) else {
                 alert("Server URL must be http or https.")
                 return nil
             }
             next = normalized
-        case .alertSecondButtonReturn:
-            next = "https://daemon.kryptic.dev"
         default:
             return nil
         }
 
-        if next == current {
+        if confirmChange, next == current {
             return nil
+        }
+        if !confirmChange {
+            return next
         }
 
         let confirm = NSAlert()
-        confirm.messageText = "Change server?"
-        confirm.informativeText = "This signs you out of the current server. You will need to sign in again."
+        confirm.messageText = "Change this profile's server?"
+        confirm.informativeText = "This signs this profile out of the previous server. Other profiles keep their URL and session."
         confirm.alertStyle = .warning
         confirm.addButton(withTitle: "Change Server")
         confirm.addButton(withTitle: "Cancel")

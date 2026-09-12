@@ -18,6 +18,7 @@ final class AppState: ObservableObject {
     var binaryAvailable: Bool { DaemonController.binaryURL() != nil }
 
     func start() {
+        ConfigStore.ensureDebugInstallDefault()
         DiagnosticsLog.event("app.start", "version=\(AppVersion.display)")
         refresh()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
@@ -48,13 +49,41 @@ final class AppState: ObservableObject {
         }
     }
 
-    func login() {
+    var menuConnection: SocketClient.Connection {
+        if loginInProgress || (binaryAvailable && !status.running) {
+            return .connecting
+        }
+        return status.connection
+    }
+
+    var connectionLabel: String {
+        switch menuConnection {
+        case .connecting:
+            if !status.running, spawnError != nil {
+                return "Daemon failed to start"
+            }
+            return "Connecting…"
+        case .awaitingApproval:
+            return "Awaiting approval"
+        case .connected:
+            return "Connected"
+        case .signedOut:
+            return "Signed out"
+        }
+    }
+
+    func login(addAccount: Bool = false) {
         guard !loginInProgress else { return }
+        var api: String?
+        if addAccount {
+            guard let chosen = ServerURLPresenter.requestForNewAccount() else { return }
+            api = chosen
+        }
         loginInProgress = true
         loginCode = nil
         loginError = nil
-        DiagnosticsLog.event("auth.login.start")
-        controller.login { [weak self] code in
+        DiagnosticsLog.event(addAccount ? "auth.login.add" : "auth.login.start")
+        controller.login(addAccount: addAccount, api: api) { [weak self] code in
             self?.loginCode = code
         } onFinished: { [weak self] error in
             self?.loginInProgress = false
@@ -69,6 +98,33 @@ final class AppState: ObservableObject {
         }
     }
 
+    func switchProfile(_ id: String) {
+        Task.detached {
+            _ = SocketClient.switchProfile(id)
+            await MainActor.run { [weak self] in
+                self?.refresh()
+            }
+        }
+    }
+
+    func deleteProfile(_ id: String) {
+        let confirm = NSAlert()
+        confirm.messageText = "Remove this account?"
+        confirm.informativeText = "This removes the account from this install and revokes its device on that server. Other profiles are not touched."
+        confirm.alertStyle = .warning
+        confirm.addButton(withTitle: "Remove")
+        confirm.addButton(withTitle: "Cancel")
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        guard confirm.runModal() == .alertFirstButtonReturn else { return }
+
+        Task.detached {
+            _ = SocketClient.deleteProfile(id)
+            await MainActor.run { [weak self] in
+                self?.refresh()
+            }
+        }
+    }
+
     func cancelLogin() {
         DiagnosticsLog.event("auth.login.cancel")
         controller.cancelLogin()
@@ -77,12 +133,11 @@ final class AppState: ObservableObject {
     }
 
     func logout() {
-        // Signing out destroys the device key, so the org-key grant is lost
         let confirm = NSAlert()
         confirm.messageText = "Sign out of Kryptic?"
-        confirm.informativeText = "Signing out deletes this device's encryption key. "
-            + "When you sign in again, an admin must grant the organization key "
-            + "to this device again before it can decrypt any secrets."
+        confirm.informativeText = "Signing out ends this account's session and drops secrets from memory. "
+            + "Other saved accounts stay signed in. This machine's keys stay, so the next sign-in "
+            + "does not need a new admin grant unless durable device trust is off."
         confirm.alertStyle = .warning
         confirm.addButton(withTitle: "Sign Out")
         confirm.addButton(withTitle: "Cancel")
@@ -115,23 +170,14 @@ final class AppState: ObservableObject {
     }
 
     func changeServerURL() {
-        guard let next = ServerURLPresenter.request() else { return }
-        controller.logout { [weak self] in
-            do {
-                if next == "https://daemon.kryptic.dev" {
-                    try ConfigStore.resetAPI()
-                } else {
-                    try ConfigStore.setAPI(next)
-                }
-            } catch {
-                return
+        let current = status.apiUrl ?? displayAPI
+        guard let next = ServerURLPresenter.request(current: current) else { return }
+        Task.detached {
+            _ = SocketClient.setAPI(next)
+            await MainActor.run { [weak self] in
+                self?.displayAPI = next
+                self?.refresh()
             }
-            self?.controller.stopAnyDaemon()
-            self?.controller.ensureDaemonRunning { [weak self] error in
-                self?.spawnError = error
-            }
-            self?.displayAPI = ConfigStore.displayAPI
-            self?.refresh()
         }
     }
 
