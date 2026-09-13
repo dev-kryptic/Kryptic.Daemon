@@ -109,9 +109,8 @@ var (
 
 	tagHWND    windows.Handle
 	verHWND    windows.Handle
-	blurbHWND  windows.Handle
-	legendHWND windows.Handle
-	linkHWND   windows.Handle
+	blurbHWND windows.Handle
+	linkHWND  windows.Handle
 )
 
 // theme mirrors the macOS About panel: primary/secondary/tertiary text plus a
@@ -319,7 +318,6 @@ func contentHeight() int32 {
 	h += 22 // tagline
 	h += 30 // version
 	h += 58 // blurb
-	h += 58 // status legend
 	h += 20 // link
 	h += 28 // bottom margin
 	return h
@@ -348,10 +346,6 @@ func createChildren(parent, instance windows.Handle) {
 
 	blurbHWND = createControl("STATIC", Blurb, wsChild|wsVisible|ssCenter|ssEditCtrl, 30, y, 320, 48, parent, instance, 0)
 	procSendMessageW.Call(uintptr(blurbHWND), wmSetFont, uintptr(bodyFont), 1)
-	y += 58
-
-	legendHWND = createControl("STATIC", StatusLegend, wsChild|wsVisible|ssCenter|ssEditCtrl, 30, y, 320, 48, parent, instance, 0)
-	procSendMessageW.Call(uintptr(legendHWND), wmSetFont, uintptr(smallFont), 1)
 	y += 58
 
 	linkHWND = createControl("STATIC", WebsiteLabel, wsChild|wsVisible|ssCenter|ssNotify, 30, y, 320, 20, parent, instance, idLink)
@@ -406,7 +400,7 @@ func aboutWndProc(hwnd, message, wparam, lparam uintptr) uintptr {
 
 func staticTextColor(control windows.Handle) uint32 {
 	switch control {
-	case tagHWND, blurbHWND, legendHWND:
+	case tagHWND, blurbHWND:
 		return activeTheme.secondary
 	case verHWND:
 		return activeTheme.tertiary

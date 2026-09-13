@@ -14,7 +14,7 @@ import (
 // current user.
 const credentialTarget = "dev.kryptic.daemon/refresh-token"
 
-const credTypeGeneric = 1       // CRED_TYPE_GENERIC
+const credTypeGeneric = 1         // CRED_TYPE_GENERIC
 const credPersistLocalMachine = 2 // CRED_PERSIST_LOCAL_MACHINE
 
 var (

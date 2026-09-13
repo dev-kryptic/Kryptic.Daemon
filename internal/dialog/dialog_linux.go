@@ -172,6 +172,99 @@ func Prompt(title, message, defaultValue string) (string, bool) {
 	return "", false
 }
 
+// PromptExtra is the three-button text prompt used by Server URI:
+// extra (Kryptic Cloud), save, cancel.
+func PromptExtra(title, message, defaultValue, extraLabel, saveLabel, cancelLabel string) (string, bool, bool) {
+	if extraLabel == "" {
+		extraLabel = cloudButton
+	}
+	if saveLabel == "" {
+		saveLabel = saveButton
+	}
+	if cancelLabel == "" {
+		cancelLabel = cancelButton
+	}
+	if path, err := exec.LookPath("yad"); err == nil {
+		cmd := exec.Command(path,
+			"--entry",
+			"--title="+title,
+			"--text="+message,
+			"--entry-text="+defaultValue,
+			"--button="+extraLabel+":2",
+			"--button="+saveLabel+":0",
+			"--button="+cancelLabel+":1",
+			"--width=480",
+		)
+		out, err := cmd.Output()
+		value := strings.TrimSpace(string(out))
+		code := exitCode(err)
+		switch code {
+		case 0:
+			return value, false, true
+		case 2:
+			return value, true, true
+		default:
+			return "", false, false
+		}
+	}
+	if bin := firstOf("zenity", "qarma"); bin != "" {
+		cmd := exec.Command(bin,
+			"--entry",
+			"--title="+title,
+			"--text="+message,
+			"--entry-text="+defaultValue,
+			"--ok-label="+saveLabel,
+			"--cancel-label="+cancelLabel,
+			"--extra-button="+extraLabel,
+			"--width=480",
+		)
+		out, err := cmd.Output()
+		value := strings.TrimSpace(string(out))
+		if err == nil {
+			return value, false, true
+		}
+		if value == extraLabel {
+			return "", true, true
+		}
+		return "", false, false
+	}
+	if _, err := exec.LookPath("kdialog"); err == nil {
+		ask := exec.Command("kdialog",
+			"--title", title,
+			"--yesnocancel", message,
+			"--yes-label", extraLabel,
+			"--no-label", saveLabel,
+			"--cancel-label", cancelLabel,
+		)
+		err := ask.Run()
+		code := exitCode(err)
+		switch code {
+		case 0:
+			return "", true, true
+		case 1:
+			cmd := exec.Command("kdialog", "--title", title, "--inputbox", message, defaultValue)
+			out, err := cmd.Output()
+			if err != nil {
+				return "", false, false
+			}
+			return strings.TrimSpace(string(out)), false, true
+		default:
+			return "", false, false
+		}
+	}
+	return "", false, false
+}
+
+func exitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	if ee, ok := err.(*exec.ExitError); ok {
+		return ee.ExitCode()
+	}
+	return -1
+}
+
 func PickFolder(title string) (string, bool) {
 	if bin := firstOf("zenity", "qarma", "yad"); bin != "" {
 		cmd := exec.Command(bin, "--file-selection", "--directory", "--title="+title, "--width=520")

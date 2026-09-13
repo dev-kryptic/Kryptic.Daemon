@@ -3,17 +3,26 @@
 package manageui
 
 import (
+	_ "embed"
+	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dev-kryptic/daemon/internal/brand"
 )
+
+//go:embed linuxpanel.py
+var linuxPanelPy string
 
 var showing sync.Mutex
 
-// Show opens a native Linux dialog (yad, then zenity) with the same actions
-// as Open Kryptic on macOS and Windows.
+// Show opens Open Kryptic. GTK (python3-gi) paints the same 380px panel as
+// macOS and Windows. yad/zenity stay as a fallback on headless boxes.
 func Show(h Handlers) {
 	if !showing.TryLock() {
 		return
@@ -22,6 +31,9 @@ func Show(h Handlers) {
 	go func() {
 		defer showing.Unlock()
 		defer endSession()
+		if runGTK(h) {
+			return
+		}
 		for {
 			snap := h.snap()
 			action, arg, ok := pickAction(snap)
@@ -35,6 +47,94 @@ func Show(h Handlers) {
 			time.Sleep(250 * time.Millisecond)
 		}
 	}()
+}
+
+func gtkReady() bool {
+	if _, err := exec.LookPath("python3"); err != nil {
+		return false
+	}
+	probes := []string{
+		"import gi; gi.require_version('Gdk','3.0'); gi.require_version('Gtk','3.0'); from gi.repository import Gdk, Gtk, GLib",
+		"import gi; gi.require_version('Gdk','4.0'); gi.require_version('Gtk','4.0'); from gi.repository import Gdk, Gtk, GLib",
+	}
+	for _, probe := range probes {
+		if exec.Command("python3", "-c", probe).Run() == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func runGTK(h Handlers) bool {
+	if !gtkReady() {
+		return false
+	}
+	dir, err := os.MkdirTemp("", "kryptic-panel-*")
+	if err != nil {
+		return false
+	}
+	defer os.RemoveAll(dir)
+	script := filepath.Join(dir, "panel.py")
+	logo := filepath.Join(dir, "logo.png")
+	if err := os.WriteFile(script, []byte(linuxPanelPy), 0o644); err != nil {
+		return false
+	}
+	if err := os.WriteFile(logo, brand.LogoPNG, 0o644); err != nil {
+		return false
+	}
+	cmd := exec.Command("python3", script, logo)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return false
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return false
+	}
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return false
+	}
+
+	done := make(chan struct{})
+	go func() {
+		dec := json.NewDecoder(stdout)
+		for {
+			var action panelAction
+			if err := dec.Decode(&action); err != nil {
+				break
+			}
+			if !KnownAction(action.Name) {
+				continue
+			}
+			h.fire(action.Name, action.Arg)
+			if action.Name == "quit" {
+				_ = cmd.Process.Kill()
+				break
+			}
+		}
+		close(done)
+	}()
+
+	enc := json.NewEncoder(stdin)
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
+	writeSnap := func() {
+		if err := enc.Encode(encodePanelSnap(h.snap())); err != nil {
+			_ = cmd.Process.Kill()
+		}
+	}
+	writeSnap()
+	for {
+		select {
+		case <-done:
+			_ = stdin.Close()
+			_ = cmd.Wait()
+			return true
+		case <-tick.C:
+			writeSnap()
+		}
+	}
 }
 
 func pickAction(snap Snapshot) (string, string, bool) {

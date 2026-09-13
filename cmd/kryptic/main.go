@@ -1,6 +1,8 @@
 // The kryptic CLI. `kryptic start` runs the daemon in the foreground
 // (launchd/systemd/the service manager keep it alive); the other commands talk
 // to the platform or to the running daemon's socket.
+//
+//go:generate go run github.com/tc-hib/go-winres@v0.3.3 make --arch amd64 --in winres/winres.json --out rsrc
 package main
 
 import (

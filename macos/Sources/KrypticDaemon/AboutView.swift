@@ -42,31 +42,10 @@ struct AboutView: View {
             .foregroundStyle(.secondary)
             .frame(maxWidth: 320)
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Status")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                legendRow(ManageTheme.green, "Connected")
-                legendRow(ManageTheme.amber, "Connecting or awaiting approval")
-                legendRow(ManageTheme.gray, "Signed out")
-            }
-            .padding(.top, 4)
-
             Link("kryptic.dev", destination: URL(string: "https://kryptic.dev")!)
                 .font(.footnote)
         }
         .padding(28)
         .frame(width: 380)
-    }
-
-    private func legendRow(_ color: Color, _ label: String) -> some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
     }
 }

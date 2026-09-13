@@ -1,7 +1,7 @@
 name: Feature request
 description: Suggest an improvement to this repository.
 title: "[Feature]: "
-labels: ["enhancement"]
+labels: [ "enhancement" ]
 body:
   - type: textarea
     id: problem

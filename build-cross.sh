@@ -9,6 +9,9 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 DIST="$ROOT/dist"
 mkdir -p "$DIST"
 
+echo "Windows resources…"
+"$ROOT/packaging/windows/embed-winres.sh"
+
 build() {
   local goos="$1" goarch="$2" package="$3" output="$4"
   shift 4

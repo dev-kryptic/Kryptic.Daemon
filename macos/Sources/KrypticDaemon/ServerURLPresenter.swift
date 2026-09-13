@@ -28,9 +28,19 @@ enum ServerURLPresenter {
             return nil
         }
 
-        let field = NSTextField(string: current)
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 340, height: 24))
+        field.stringValue = current
         field.placeholderString = "https://daemon.kryptic.dev"
-        field.frame = NSRect(x: 0, y: 0, width: 340, height: 24)
+        field.isEditable = true
+        field.isSelectable = true
+        field.isBezeled = true
+        field.bezelStyle = .roundedBezel
+        field.drawsBackground = true
+        field.backgroundColor = .textBackgroundColor
+        field.textColor = .textColor
+        field.usesSingleLineMode = true
+        field.cell?.wraps = false
+        field.cell?.isScrollable = true
 
         let prompt = NSAlert()
         prompt.messageText = title
@@ -40,7 +50,11 @@ enum ServerURLPresenter {
         prompt.addButton(withTitle: "Kryptic Cloud")
         prompt.addButton(withTitle: "Save")
         prompt.addButton(withTitle: "Cancel")
+        prompt.layout()
+        prompt.window.initialFirstResponder = field
         NSApplication.shared.activate(ignoringOtherApps: true)
+        prompt.window.makeKeyAndOrderFront(nil)
+        prompt.window.makeFirstResponder(field)
         let response = prompt.runModal()
 
         let next: String

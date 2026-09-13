@@ -157,14 +157,16 @@ struct ManageWindow: View {
     }
 
     private func panelButton(_ title: String, kind: ButtonKind, disabled: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        return Button(action: action) {
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
                 .background(kind.background(accent: accent))
                 .foregroundStyle(kind.foreground)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(shape)
+                .overlay(shape.stroke(kind.border(accent: accent), lineWidth: 1))
         }
         .buttonStyle(.plain)
         .disabled(disabled)
@@ -190,7 +192,6 @@ private struct ProfileRow: View {
     let accent: Color
     let onSwitch: () -> Void
     let onDelete: () -> Void
-    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -216,7 +217,7 @@ private struct ProfileRow: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(profile.active ? accent : Color.clear, lineWidth: 1)
+                        .stroke(profile.active ? accent : ManageTheme.line, lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
@@ -226,14 +227,18 @@ private struct ProfileRow: View {
                 Image(systemName: "trash")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(ManageTheme.danger)
-                    .frame(width: 28, height: 28)
+                    .frame(width: 32, height: 32)
+                    .background(ManageTheme.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(ManageTheme.line, lineWidth: 1)
+                    )
             }
             .buttonStyle(.plain)
-            .opacity(hovering ? 1 : 0)
             .help("Delete this account")
             .accessibilityLabel("Delete \(profile.email.isEmpty ? profile.id : profile.email)")
         }
-        .onHover { hovering = $0 }
     }
 
     private var profileMeta: String {
@@ -267,6 +272,14 @@ private enum ButtonKind {
         case .primary: return ManageTheme.accentText
         case .surface: return ManageTheme.text
         case .danger: return ManageTheme.danger
+        }
+    }
+
+    func border(accent: Color) -> Color {
+        switch self {
+        case .primary: return accent
+        case .surface: return ManageTheme.line
+        case .danger: return ManageTheme.danger.opacity(0.45)
         }
     }
 }

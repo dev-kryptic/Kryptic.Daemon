@@ -27,6 +27,11 @@ if (Test-Path $tray) {
     Copy-Item $tray (Join-Path $installDir "kryptic-tray.exe") -Force
 }
 
+# Local go build / build-cross.sh binaries are unsigned. Defender's ML
+# (Wacatac.B!ml) sometimes flags those. Signed installs come from
+# kryptic.dev/download, not this script.
+Write-Host "Unsigned local build. If Defender flags Wacatac.B!ml, allow this file; it is a false positive on unsigned Go binaries."
+
 # Put the CLI on the user PATH (no admin rights needed for the user scope).
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$installDir*") {

@@ -7,7 +7,7 @@ enum AboutWindowPresenter {
 
     static func show(version: String? = nil) {
         let content = NSHostingView(rootView: AboutView(version: version))
-        content.frame = NSRect(x: 0, y: 0, width: 380, height: 430)
+        content.frame = NSRect(x: 0, y: 0, width: 380, height: 360)
 
         if window == nil {
             let panel = NSPanel(

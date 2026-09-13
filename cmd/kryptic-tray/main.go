@@ -4,7 +4,10 @@
 // An externally managed daemon (systemd, `kryptic start`) is detected and left
 // alone; the tray then acts as a remote control for it.
 //
-// The tray menu is native. Open Kryptic shows the native window.
+// The tray menu is native. Left-click (and right-click) opens it. Open
+// Kryptic is a menu item, not the default click.
+//
+//go:generate go run github.com/tc-hib/go-winres@v0.3.3 make --arch amd64 --in winres/winres.json --out rsrc
 package main
 
 import (
@@ -12,7 +15,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -241,25 +243,12 @@ func onReady() {
 	startLogin = func(add bool) {
 		loginClient := client
 		if add {
-			if config.EnvOverrides() {
-				dialog.Info("Kryptic", "KRYPTIC_API is set and overrides the server URI for new accounts.")
-			} else {
-				def, _ := config.API()
-				value, ok := dialog.Prompt("Kryptic", "Server URI for the new account", def)
-				if !ok {
-					return
-				}
-				value = strings.TrimSpace(value)
-				if value == "" {
-					value = config.DefaultAPI
-				}
-				normalized, err := config.NormalizeAPI(value)
-				if err != nil {
-					dialog.Info("Kryptic", err.Error())
-					return
-				}
-				loginClient = api.NewClientFor(normalized)
+			def, _ := config.API()
+			value, ok := dialog.PromptNewAccountServer(def)
+			if !ok {
+				return
 			}
+			loginClient = api.NewClientFor(value)
 		} else {
 			loginClient = api.NewClientFor(authstore.ResolvedAPI())
 		}
@@ -402,7 +391,6 @@ func onReady() {
 	openWindow := func() {
 		manageui.Show(handlers)
 	}
-	systray.SetOnTapped(openWindow)
 
 	listen := func(item *systray.MenuItem, fn func()) {
 		go func() {
@@ -551,31 +539,9 @@ func runUpdateFlow(item *systray.MenuItem) {
 }
 
 func changeServerURL(client *api.Client, owned *server.Server) {
-	if config.EnvOverrides() {
-		dialog.Info("Kryptic", "KRYPTIC_API is set in the environment and overrides every profile's URL.")
-		return
-	}
 	current := authstore.ResolvedAPI()
-	value, ok := dialog.Prompt("Kryptic", "Server URI for this profile", current)
+	next, ok := dialog.PromptServerURI(current)
 	if !ok {
-		return
-	}
-	value = strings.TrimSpace(value)
-	var next string
-	if value == "" {
-		next = config.DefaultAPI
-	} else {
-		normalized, err := config.NormalizeAPI(value)
-		if err != nil {
-			dialog.Info("Kryptic", err.Error())
-			return
-		}
-		next = normalized
-	}
-	if next == current {
-		return
-	}
-	if !dialog.Confirm("Kryptic", "This signs this profile out of the previous server. Other profiles keep their URL and session.") {
 		return
 	}
 	if err := login.SetActiveAPI(next); err != nil {

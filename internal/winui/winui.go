@@ -25,6 +25,8 @@ const (
 	WSChild         = 0x40000000
 	WSTabStop       = 0x00010000
 	WSBorder        = 0x00800000
+	WSVScroll       = 0x00200000
+	WSClipChildren  = 0x02000000
 	BSPushButton    = 0x00000000
 	BSDefPushButton = 0x00000001
 	BSOwnerDraw     = 0x0000000B
@@ -53,7 +55,22 @@ const (
 	WMGetText        = 0x000D
 	WMGetTextLength  = 0x000E
 	WMTimer          = 0x0113
+	WMVScroll        = 0x0115
+	WMMouseWheel     = 0x020A
 	WMUser           = 0x0400
+
+	SBLineUp        = 0
+	SBLineDown      = 1
+	SBPageUp        = 2
+	SBPageDown      = 3
+	SBThumbPosition = 4
+	SBThumbTrack    = 5
+	SBVert          = 1
+	SIFRange        = 0x0001
+	SIFPage         = 0x0002
+	SIFPos          = 0x0004
+	SWPNoZOrder     = 0x0004
+	SWPNoActivate   = 0x0010
 	WMApp            = 0x8000
 	SWHide           = 0
 	SWRestore        = 9
@@ -80,15 +97,22 @@ const (
 	ButtonPrimary uintptr = 1
 	ButtonGhost   uintptr = 2
 	ButtonDanger  uintptr = 3
+	// ButtonProfile renders two lines (name\nmeta) left-aligned, like the
+	// macOS account rows. ButtonProfileActive adds the accent border + check.
+	ButtonProfile       uintptr = 4
+	ButtonProfileActive uintptr = 5
+	// ButtonTrash is the square delete control beside a profile row.
+	ButtonTrash uintptr = 6
 
-	odsSelected  = 0x0001
-	odsFocus     = 0x0010
-	psSolid      = 0
-	dtCenter     = 0x00000001
-	dtVCenter    = 0x00000004
-	dtSingle     = 0x00000020
-	tmeLeave     = 0x00000002
-	buttonRadius = 20
+	odsSelected   = 0x0001
+	odsFocus      = 0x0010
+	psSolid       = 0
+	dtCenter      = 0x00000001
+	dtVCenter     = 0x00000004
+	dtSingle      = 0x00000020
+	dtEndEllipsis = 0x00008000
+	tmeLeave      = 0x00000002
+	buttonRadius  = 20
 )
 
 var (
@@ -133,6 +157,8 @@ var (
 	ProcGetDlgCtrlID         = User32.NewProc("GetDlgCtrlID")
 	ProcSetWindowTextW       = User32.NewProc("SetWindowTextW")
 	ProcPostMessageW         = User32.NewProc("PostMessageW")
+	ProcSetWindowPos         = User32.NewProc("SetWindowPos")
+	ProcSetScrollInfo        = User32.NewProc("SetScrollInfo")
 
 	ProcGetModuleHandleW   = Kernel32.NewProc("GetModuleHandleW")
 	ProcCreateSolidBrush   = Gdi32.NewProc("CreateSolidBrush")
@@ -332,11 +358,15 @@ func ApplyChrome(hwnd windows.Handle, dark bool) {
 }
 
 func Font(px, weight int32, underline bool) windows.Handle {
+	return FontFace("Segoe UI", px, weight, underline)
+}
+
+func FontFace(name string, px, weight int32, underline bool) windows.Handle {
 	underlined := uintptr(0)
 	if underline {
 		underlined = 1
 	}
-	face, _ := windows.UTF16PtrFromString("Segoe UI")
+	face, _ := windows.UTF16PtrFromString(name)
 	h, _, _ := ProcCreateFontW.Call(
 		uintptr(px), 0, 0, 0, uintptr(weight), 0, underlined, 0,
 		1, 0, 0, 5, 0,
@@ -513,168 +543,40 @@ func scaleToFit(src image.Image, maxW, maxH int) *image.RGBA {
 	return out
 }
 
-type drawItemStruct struct {
-	CtlType    uint32
-	CtlID      uint32
-	ItemID     uint32
-	ItemAction uint32
-	ItemState  uint32
-	HwndItem   windows.Handle
-	HDC        windows.Handle
-	RcItem     Rect
-	ItemData   uintptr
+type ScrollInfo struct {
+	Size     uint32
+	Mask     uint32
+	Min      int32
+	Max      int32
+	Page     uint32
+	Pos      int32
+	TrackPos int32
 }
 
-type trackMouseEvent struct {
-	Size      uint32
-	Flags     uint32
-	HwndTrack windows.Handle
-	HoverTime uint32
-}
-
-var (
-	buttonOrig = map[windows.Handle]uintptr{}
-	buttonCB   = windows.NewCallback(buttonSubclass)
-	hoveredBtn windows.Handle
-	buttonMu   sync.Mutex
-)
-
-func CreateButton(parent, instance windows.Handle, id uintptr, x, y, w, h int32, label string, kind uintptr, font windows.Handle) windows.Handle {
-	style := uint32(WSChild | WSVisible | WSTabStop | BSOwnerDraw)
-	hwnd := CreateControl(0, "BUTTON", label, style, x, y, w, h, parent, instance, id)
-	if hwnd == 0 {
-		return 0
-	}
-	ProcSetWindowLongPtrW.Call(uintptr(hwnd), GWLPUserData, kind)
-	if font != 0 {
-		ProcSendMessageW.Call(uintptr(hwnd), WMSetFont, uintptr(font), 1)
-	}
-	orig, _, _ := ProcSetWindowLongPtrW.Call(uintptr(hwnd), GWLWNDPROC, buttonCB)
-	buttonMu.Lock()
-	buttonOrig[hwnd] = orig
-	buttonMu.Unlock()
-	return hwnd
-}
-
-func HandleDrawItem(lparam uintptr, theme Theme, font windows.Handle) uintptr {
-	dis := (*drawItemStruct)(unsafe.Pointer(lparam))
-	kind, _, _ := ProcGetWindowLongPtrW.Call(uintptr(dis.HwndItem), GWLPUserData)
-	buttonMu.Lock()
-	hot := dis.HwndItem == hoveredBtn
-	buttonMu.Unlock()
-	pressed := dis.ItemState&odsSelected != 0
-
-	var fill, text, border uint32
-	switch kind {
-	case ButtonPrimary:
-		fill = theme.Accent
-		if hot {
-			fill = theme.AccentHot
-		}
-		if pressed {
-			fill = theme.AccentDown
-		}
-		text = theme.Ink
-		border = fill
-	case ButtonDanger:
-		fill = theme.DangerFill
-		if hot {
-			fill = theme.DangerHot
-		}
-		text = theme.Danger
-		border = fill
-	default:
-		fill = theme.Surface
-		if hot {
-			fill = theme.SurfaceHot
-		}
-		text = theme.Primary
-		border = theme.Border
-		if hot {
-			border = theme.BorderHot
-		}
-	}
-
-	hdc := uintptr(dis.HDC)
-	brush := NewBrush(fill)
-	pen, _, _ := ProcCreatePen.Call(psSolid, 1, uintptr(border))
-	oldBrush, _, _ := ProcSelectObject.Call(hdc, uintptr(brush))
-	oldPen, _, _ := ProcSelectObject.Call(hdc, pen)
-	rc := dis.RcItem
-	ProcRoundRect.Call(hdc, uintptr(rc.Left), uintptr(rc.Top), uintptr(rc.Right), uintptr(rc.Bottom), buttonRadius, buttonRadius)
-	ProcSelectObject.Call(hdc, oldBrush)
-	ProcSelectObject.Call(hdc, oldPen)
-	ProcDeleteObject.Call(uintptr(brush))
-	ProcDeleteObject.Call(pen)
-
-	if font != 0 {
-		ProcSelectObject.Call(hdc, uintptr(font))
-	}
-	ProcSetBkMode.Call(hdc, bkTransparent)
-	ProcSetTextColor.Call(hdc, uintptr(text))
-	label := WindowText(dis.HwndItem)
-	if label != "" {
-		ptr, _ := windows.UTF16PtrFromString(label)
-		textRC := rc
-		ProcDrawTextW.Call(hdc, uintptr(unsafe.Pointer(ptr)), ^uintptr(0), uintptr(unsafe.Pointer(&textRC)), dtCenter|dtVCenter|dtSingle)
-	}
-	return 1
-}
-
-func buttonSubclass(hwnd, message, wparam, lparam uintptr) uintptr {
-	switch message {
-	case WMMouseMove:
-		buttonMu.Lock()
-		old := hoveredBtn
-		hoveredBtn = windows.Handle(hwnd)
-		buttonMu.Unlock()
-		if old != windows.Handle(hwnd) {
-			invalidate(old)
-			invalidate(windows.Handle(hwnd))
-		}
-		tme := trackMouseEvent{
-			Size:      uint32(unsafe.Sizeof(trackMouseEvent{})),
-			Flags:     tmeLeave,
-			HwndTrack: windows.Handle(hwnd),
-		}
-		ProcTrackMouseEvent.Call(uintptr(unsafe.Pointer(&tme)))
-	case WMMouseLeave:
-		buttonMu.Lock()
-		if hoveredBtn == windows.Handle(hwnd) {
-			hoveredBtn = 0
-		}
-		buttonMu.Unlock()
-		invalidate(windows.Handle(hwnd))
-	case WMDestroy:
-		buttonMu.Lock()
-		orig := buttonOrig[windows.Handle(hwnd)]
-		delete(buttonOrig, windows.Handle(hwnd))
-		if hoveredBtn == windows.Handle(hwnd) {
-			hoveredBtn = 0
-		}
-		buttonMu.Unlock()
-		if orig != 0 {
-			ret, _, _ := ProcCallWindowProcW.Call(orig, hwnd, message, wparam, lparam)
-			return ret
-		}
-		return 0
-	}
-	buttonMu.Lock()
-	orig := buttonOrig[windows.Handle(hwnd)]
-	buttonMu.Unlock()
-	if orig == 0 {
-		ret, _, _ := ProcDefWindowProcW.Call(hwnd, message, wparam, lparam)
-		return ret
-	}
-	ret, _, _ := ProcCallWindowProcW.Call(orig, hwnd, message, wparam, lparam)
-	return ret
-}
-
-func invalidate(hwnd windows.Handle) {
+func Move(hwnd windows.Handle, x, y, w, h int32) {
 	if hwnd == 0 {
 		return
 	}
-	ProcInvalidateRect.Call(uintptr(hwnd), 0, 1)
+	ProcSetWindowPos.Call(uintptr(hwnd), 0, uintptr(x), uintptr(y), uintptr(w), uintptr(h), SWPNoZOrder|SWPNoActivate)
+}
+
+func SetVertScroll(hwnd windows.Handle, pos, page, content int32) {
+	if page < 1 {
+		page = 1
+	}
+	max := content - 1
+	if max < 0 {
+		max = 0
+	}
+	si := ScrollInfo{
+		Size: uint32(unsafe.Sizeof(ScrollInfo{})),
+		Mask: SIFRange | SIFPage | SIFPos,
+		Min:  0,
+		Max:  max,
+		Page: uint32(page),
+		Pos:  pos,
+	}
+	ProcSetScrollInfo.Call(uintptr(hwnd), SBVert, uintptr(unsafe.Pointer(&si)), 1)
 }
 
 func SetText(hwnd windows.Handle, text string) {

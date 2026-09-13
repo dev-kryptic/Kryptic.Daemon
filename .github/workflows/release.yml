@@ -445,6 +445,9 @@ jobs:
           $env:GOARCH = "amd64"
           $versionFlag = "-X github.com/dev-kryptic/daemon/internal/server.Version=$env:VERSION"
 
+          bash packaging/windows/embed-winres.sh $env:VERSION
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
           go build -trimpath -ldflags $versionFlag -o dist/kryptic_windows_amd64.exe ./cmd/kryptic
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

@@ -4,11 +4,14 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 
 	"github.com/dev-kryptic/daemon/internal/about"
 	"github.com/dev-kryptic/daemon/internal/api"
 	"github.com/dev-kryptic/daemon/internal/applog"
+	"github.com/dev-kryptic/daemon/internal/authstore"
 	"github.com/dev-kryptic/daemon/internal/config"
+	"github.com/dev-kryptic/daemon/internal/dialog"
 	"github.com/dev-kryptic/daemon/internal/ipc"
 	"github.com/dev-kryptic/daemon/internal/login"
 	"github.com/dev-kryptic/daemon/internal/manageui"
@@ -76,7 +79,12 @@ func handlePanelAction(client *api.Client, name, arg string) {
 	case "signIn":
 		_, _ = login.Run(client, nil)
 	case "addAccount":
-		_, _ = login.RunAdd(client, nil)
+		def, _ := config.API()
+		value, ok := dialog.PromptNewAccountServer(def)
+		if !ok {
+			return
+		}
+		_, _ = login.RunAdd(api.NewClientFor(value), nil)
 	case "signOut":
 		_ = login.Logout(client)
 	case "switchProfile":
@@ -84,7 +92,16 @@ func handlePanelAction(client *api.Client, name, arg string) {
 	case "deleteProfile":
 		_ = login.Delete(arg)
 	case "serverURI":
-		_ = login.SetActiveAPI(arg)
+		next := strings.TrimSpace(arg)
+		if next == "" {
+			var ok bool
+			next, ok = dialog.PromptServerURI(authstore.ResolvedAPI())
+			if !ok {
+				return
+			}
+		}
+		_ = login.SetActiveAPI(next)
+		client.BaseURL = next
 	case "flush":
 		_, _ = ipc.Request(map[string]any{"type": "flush"})
 	case "github":

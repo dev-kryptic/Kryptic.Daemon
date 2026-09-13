@@ -5,6 +5,8 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+## 1.2.0 - 2026-09-13
+
 ### Added
 
 - Multiple accounts on one install. `kryptic login --add`, `kryptic profile`,
@@ -15,9 +17,8 @@ matching section into the GitHub Release.
   `kryptic reset-device --all` wipes every profile.
 - Menu-bar and tray status dot: green when connected, amber while connecting
   or awaiting an organization-key grant, gray when signed out.
-- Open Kryptic on macOS (SwiftUI), Windows (Win32), and Linux
-  (system dialogs). Choose it from the menu bar or tray, or run
-  `kryptic panel` on Windows and Linux.
+- Open Kryptic on macOS (SwiftUI), Windows (Win32), and Linux (GTK). Choose
+  it from the menu bar or tray, or run `kryptic panel` on Windows and Linux.
 - Device keys persist across `kryptic logout`. `kryptic reset-device` deletes
   them and revokes the machine so the next login needs a new admin grant.
 - Device-flow poll signs the start challenge so the platform can prove this
@@ -31,8 +32,18 @@ matching section into the GitHub Release.
   Other profiles keep their URL and session. `kryptic login --add --api URL`
   creates a new profile against that host.
 - Open Kryptic title, Sign In / Sign Out verbs, hover trash to remove an
-  account, Kryptic Cloud as the first Server URI option, and a status-dot
-  legend in About.
+  account, and Kryptic Cloud as the first Server URI option.
+- Open Kryptic on Windows matches the macOS layout: colored status dot,
+  two-line account rows with a check on the active one and a bordered trash
+  button, section rules, muted headers, and mouse-wheel scrolling.
+- Server URI on Windows and Linux offers Kryptic Cloud, Save, and Cancel,
+  matching macOS. Left-click on the tray icon opens the menu; Open Kryptic
+  only opens from that menu item.
+- Windows executables embed the app icon, VERSIONINFO, and an asInvoker
+  manifest so Defender is less likely to treat an unsigned local build as
+  Wacatac.B!ml. Signed installs from kryptic.dev are unchanged.
+- Open Kryptic on Linux is the same 380px panel as macOS and Windows
+  (GTK via python3-gi), not a zenity list. The list remains a fallback.
 
 ### Fixed
 

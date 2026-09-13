@@ -36,6 +36,22 @@ func TestProfileTitle(t *testing.T) {
 	}
 }
 
+func TestEncodePanelSnapUsesHostLabel(t *testing.T) {
+	got := encodePanelSnap(Snapshot{
+		API:     "https://daemon.kryptic.dev",
+		Version: "1.2.3",
+		Profiles: []Profile{
+			{ID: "p", Email: "a@b.c", API: "https://daemon.kryptic.dev", Active: true, SignedIn: true},
+		},
+	})
+	if got.APILabel != CloudName {
+		t.Fatalf("api label %q", got.APILabel)
+	}
+	if got.Version != "1.2.3" || len(got.Profiles) != 1 || got.Profiles[0].APILabel != CloudName {
+		t.Fatalf("%+v", got)
+	}
+}
+
 func TestConnectionLabel(t *testing.T) {
 	if ConnectionLabel("connected", "") != "Connected" {
 		t.Fatal(ConnectionLabel("connected", ""))

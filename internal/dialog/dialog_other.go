@@ -28,6 +28,11 @@ func Prompt(title, message, defaultValue string) (string, bool) {
 	return "", false
 }
 
+func PromptExtra(title, message, defaultValue, extraLabel, saveLabel, cancelLabel string) (string, bool, bool) {
+	fmt.Fprintf(os.Stderr, "%s: %s (%s / %s / %s)\n", title, message, extraLabel, saveLabel, cancelLabel)
+	return "", false, false
+}
+
 func PickFolder(title string) (string, bool) {
 	fmt.Fprintf(os.Stderr, "%s: folder picker is not available on this platform\n", title)
 	return "", false

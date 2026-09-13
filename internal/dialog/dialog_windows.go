@@ -12,11 +12,13 @@ import (
 )
 
 const (
-	dlgWidth = 420
-	logoSize = 72
-	idOK     = winui.IDOK
-	idCancel = winui.IDCancel
-	idEdit   = 1003
+	dlgWidth      = 420
+	dlgExtraWidth = 480
+	logoSize      = 72
+	idOK          = winui.IDOK
+	idCancel      = winui.IDCancel
+	idEdit        = 1003
+	idExtra       = 1004
 )
 
 type dlgKind int
@@ -26,6 +28,7 @@ const (
 	kindConfirm
 	kindPrompt
 	kindAsk
+	kindPromptExtra
 )
 
 type dlg struct {
@@ -44,9 +47,12 @@ type dlg struct {
 	okHWND    windows.Handle
 	editPrev  uintptr
 	ok        bool
+	extra     bool
 	closed    bool
 	accept    string
 	reject    string
+	extraLbl  string
+	width     int32
 	msgH      int32
 }
 
@@ -80,6 +86,40 @@ func Prompt(title, message, defaultValue string) (string, bool) {
 	return d.value, true
 }
 
+// PromptExtra is the three-button text prompt used by Server URI:
+// extra (Kryptic Cloud), save, cancel.
+func PromptExtra(title, message, defaultValue, extraLabel, saveLabel, cancelLabel string) (string, bool, bool) {
+	if extraLabel == "" {
+		extraLabel = cloudButton
+	}
+	if saveLabel == "" {
+		saveLabel = saveButton
+	}
+	if cancelLabel == "" {
+		cancelLabel = cancelButton
+	}
+	d := &dlg{
+		kind:     kindPromptExtra,
+		title:    title,
+		message:  message,
+		value:    defaultValue,
+		theme:    winui.CurrentTheme(),
+		accept:   saveLabel,
+		reject:   cancelLabel,
+		extraLbl: extraLabel,
+		width:    dlgExtraWidth,
+		msgH:     72,
+	}
+	present(d)
+	if !d.ok {
+		return "", false, false
+	}
+	if d.extra {
+		return d.value, true, true
+	}
+	return d.value, false, true
+}
+
 func run(kind dlgKind, title, message, defaultValue string) *dlg {
 	d := &dlg{
 		kind:    kind,
@@ -87,6 +127,7 @@ func run(kind dlgKind, title, message, defaultValue string) *dlg {
 		message: message,
 		value:   defaultValue,
 		theme:   winui.CurrentTheme(),
+		width:   dlgWidth,
 		msgH:    48,
 	}
 	return present(d)
@@ -106,6 +147,7 @@ func runAsk(title, message, accept, reject string) *dlg {
 		theme:   winui.CurrentTheme(),
 		accept:  accept,
 		reject:  reject,
+		width:   dlgWidth,
 		msgH:    120,
 	}
 	return present(d)
@@ -146,9 +188,12 @@ func present(d *dlg) *dlg {
 	}
 	winui.ProcRegisterClassExW.Call(uintptr(unsafe.Pointer(&class)))
 
+	if d.width == 0 {
+		d.width = dlgWidth
+	}
 	clientH := contentHeight(d)
 	style := uintptr(winui.WSCaption | winui.WSSysMenu)
-	x, y, winW, winH := winui.CenteredFrame(dlgWidth, clientH, style)
+	x, y, winW, winH := winui.CenteredFrame(d.width, clientH, style)
 	titlePtr, _ := windows.UTF16PtrFromString(d.title)
 	hwnd, _, _ := winui.ProcCreateWindowExW.Call(
 		0,
@@ -183,16 +228,20 @@ func contentHeight(d *dlg) int32 {
 		msgH = 48
 	}
 	h := int32(24 + logoSize + 16 + msgH + 16 + 36 + 24)
-	if d.kind == kindPrompt {
+	if d.kind == kindPrompt || d.kind == kindPromptExtra {
 		h += 36
 	}
 	return h
 }
 
 func createBody(parent, instance windows.Handle, d *dlg) {
+	width := d.width
+	if width == 0 {
+		width = dlgWidth
+	}
 	y := int32(24)
 	if d.logoBMP != 0 {
-		x := int32((dlgWidth - logoSize) / 2)
+		x := (width - logoSize) / 2
 		logo := winui.CreateControl(0, "STATIC", "", winui.WSChild|winui.WSVisible|winui.SSBitmap, x, y, logoSize, logoSize, parent, instance, 0)
 		winui.ProcSendMessageW.Call(uintptr(logo), winui.WMSetImage, winui.ImageBitmap, uintptr(d.logoBMP))
 		y += logoSize + 16
@@ -202,12 +251,12 @@ func createBody(parent, instance windows.Handle, d *dlg) {
 	if msgH == 0 {
 		msgH = 48
 	}
-	msg := winui.CreateControl(0, "STATIC", d.message, winui.WSChild|winui.WSVisible|winui.SSCenter|winui.SSEditCtrl, 28, y, dlgWidth-56, msgH, parent, instance, 0)
+	msg := winui.CreateControl(0, "STATIC", d.message, winui.WSChild|winui.WSVisible|winui.SSCenter|winui.SSEditCtrl, 28, y, width-56, msgH, parent, instance, 0)
 	winui.ProcSendMessageW.Call(uintptr(msg), winui.WMSetFont, uintptr(d.bodyFnt), 1)
 	y += msgH + 8
 
-	if d.kind == kindPrompt {
-		d.editHWND = winui.CreateControl(0x00000200, "EDIT", d.value, winui.WSChild|winui.WSVisible|winui.WSTabStop|winui.ESAutoHScroll, 28, y, dlgWidth-56, 28, parent, instance, idEdit)
+	if d.kind == kindPrompt || d.kind == kindPromptExtra {
+		d.editHWND = winui.CreateControl(0x00000200, "EDIT", d.value, winui.WSChild|winui.WSVisible|winui.WSTabStop|winui.ESAutoHScroll, 28, y, width-56, 28, parent, instance, idEdit)
 		winui.ProcSendMessageW.Call(uintptr(d.editHWND), winui.WMSetFont, uintptr(d.bodyFnt), 1)
 		d.editPrev, _, _ = winui.ProcSetWindowLongPtrW.Call(uintptr(d.editHWND), winui.GWLWNDPROC, editCB)
 		y += 40
@@ -221,9 +270,10 @@ func createBody(parent, instance windows.Handle, d *dlg) {
 		}
 	}
 
-	const buttonW, buttonH, gap int32 = 128, 36, 12
+	const buttonH int32 = 36
 	if d.kind == kindInfo {
-		x := (dlgWidth - buttonW) / 2
+		const buttonW int32 = 128
+		x := (width - buttonW) / 2
 		d.okHWND = winui.CreateButton(parent, instance, idOK, x, y, buttonW, buttonH, okLabel, winui.ButtonPrimary, d.buttonFnt)
 		return
 	}
@@ -232,8 +282,18 @@ func createBody(parent, instance windows.Handle, d *dlg) {
 	if cancelLabel == "" {
 		cancelLabel = "Cancel"
 	}
+	if d.kind == kindPromptExtra {
+		const buttonW, gap int32 = 140, 12
+		total := buttonW*3 + gap*2
+		start := (width - total) / 2
+		winui.CreateButton(parent, instance, idExtra, start, y, buttonW, buttonH, d.extraLbl, winui.ButtonGhost, d.buttonFnt)
+		d.okHWND = winui.CreateButton(parent, instance, idOK, start+buttonW+gap, y, buttonW, buttonH, okLabel, winui.ButtonPrimary, d.buttonFnt)
+		winui.CreateButton(parent, instance, idCancel, start+2*(buttonW+gap), y, buttonW, buttonH, cancelLabel, winui.ButtonGhost, d.buttonFnt)
+		return
+	}
+	const buttonW, gap int32 = 128, 12
 	total := buttonW*2 + gap
-	start := (dlgWidth - total) / 2
+	start := (width - total) / 2
 	d.okHWND = winui.CreateButton(parent, instance, idOK, start, y, buttonW, buttonH, okLabel, winui.ButtonPrimary, d.buttonFnt)
 	winui.CreateButton(parent, instance, idCancel, start+buttonW+gap, y, buttonW, buttonH, cancelLabel, winui.ButtonGhost, d.buttonFnt)
 }
@@ -261,23 +321,26 @@ func dlgWndProc(hwnd, message, wparam, lparam uintptr) uintptr {
 	case winui.WMCommand:
 		switch wparam & 0xffff {
 		case idOK:
-			finish(d, hwnd, true)
+			finish(d, hwnd, true, false)
+			return 0
+		case idExtra:
+			finish(d, hwnd, true, true)
 			return 0
 		case idCancel:
-			finish(d, hwnd, false)
+			finish(d, hwnd, false, false)
 			return 0
 		}
 	case winui.WMKeyDown:
 		if wparam == winui.VKEscape {
-			finish(d, hwnd, d.kind == kindInfo)
+			finish(d, hwnd, d.kind == kindInfo, false)
 			return 0
 		}
-		if wparam == winui.VKReturn && d.kind != kindPrompt {
-			finish(d, hwnd, true)
+		if wparam == winui.VKReturn && d.kind != kindPrompt && d.kind != kindPromptExtra {
+			finish(d, hwnd, true, false)
 			return 0
 		}
 	case winui.WMClose:
-		finish(d, hwnd, false)
+		finish(d, hwnd, false, false)
 		return 0
 	case winui.WMDestroy:
 		winui.ProcPostQuitMessage.Call(0)
@@ -298,11 +361,11 @@ func editWndProc(hwnd, message, wparam, lparam uintptr) uintptr {
 		switch wparam {
 		case winui.VKReturn:
 			parent, _, _ := winui.ProcGetParent.Call(hwnd)
-			finish(d, parent, true)
+			finish(d, parent, true, false)
 			return 0
 		case winui.VKEscape:
 			parent, _, _ := winui.ProcGetParent.Call(hwnd)
-			finish(d, parent, false)
+			finish(d, parent, false, false)
 			return 0
 		}
 	}
@@ -310,7 +373,7 @@ func editWndProc(hwnd, message, wparam, lparam uintptr) uintptr {
 	return ret
 }
 
-func finish(d *dlg, hwnd uintptr, ok bool) {
+func finish(d *dlg, hwnd uintptr, ok, extra bool) {
 	if d.closed {
 		return
 	}
@@ -319,5 +382,6 @@ func finish(d *dlg, hwnd uintptr, ok bool) {
 		d.value = winui.WindowText(d.editHWND)
 	}
 	d.ok = ok
+	d.extra = extra
 	winui.ProcDestroyWindow.Call(hwnd)
 }

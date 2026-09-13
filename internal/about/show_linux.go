@@ -32,13 +32,11 @@ func show() {
 			"<span>%s</span>\n\n"+
 			"<span size='small' foreground='#6b7280'>%s</span>\n\n"+
 			"%s\n\n"+
-			"%s\n\n"+
 			"<a href='%s'>%s</a>",
 		escapePango(AppName),
 		escapePango(Tagline),
 		escapePango(VersionLine()),
 		escapePango(Blurb),
-		StatusLegendPango,
 		WebsiteURL,
 		escapePango(WebsiteLabel),
 	)
@@ -113,7 +111,7 @@ func runKDialog() bool {
 	if _, err := exec.LookPath("kdialog"); err != nil {
 		return false
 	}
-	text := fmt.Sprintf("%s\n%s\n\n%s\n\n%s\n\n%s\n\n%s", AppName, Tagline, VersionLine(), Blurb, StatusLegend, WebsiteURL)
+	text := fmt.Sprintf("%s\n%s\n\n%s\n\n%s\n\n%s", AppName, Tagline, VersionLine(), Blurb, WebsiteURL)
 	cmd := exec.Command("kdialog", "--title", WindowTitle, "--yesnocancel", text, "--yes-label", WebsiteLabel, "--no-label", "Close", "--cancel-label", "Close")
 	err := cmd.Run()
 	if err == nil {
