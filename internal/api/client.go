@@ -27,8 +27,11 @@ const DefaultBaseURL = config.DefaultAPI
 const DefaultPipelinesBaseURL = "https://pipelines.kryptic.dev"
 
 type Client struct {
-	BaseURL string
-	HTTP    *http.Client
+	BaseURL     string
+	HTTP        *http.Client
+	TokenPath   string
+	KeysPath    string
+	DynamicPath string
 }
 
 func NewClient() *Client {
@@ -42,9 +45,27 @@ func NewClientFor(baseURL string) *Client {
 	transport.MaxIdleConns = 4
 	transport.MaxIdleConnsPerHost = 2
 	return &Client{
-		BaseURL: baseURL,
-		HTTP:    &http.Client{Timeout: 15 * time.Second, Transport: transport},
+		BaseURL:     baseURL,
+		HTTP:        &http.Client{Timeout: 30 * time.Second, Transport: transport},
+		TokenPath:   "/api/token",
+		KeysPath:    "/api/keys/me",
+		DynamicPath: "/api/dynamic-secrets",
 	}
+}
+
+const DefaultSecretsBaseURL = "https://secrets.kryptic.dev"
+
+// NewSecretsAPIClient talks to the public Secrets API (machine tokens, /v1).
+func NewSecretsAPIClient() *Client {
+	base := os.Getenv("KRYPTIC_SECRETS_API")
+	if base == "" {
+		base = DefaultSecretsBaseURL
+	}
+	client := NewClientFor(base)
+	client.TokenPath = "/v1/token"
+	client.KeysPath = "/v1/keys/me"
+	client.DynamicPath = "/v1/dynamic-secrets"
+	return client
 }
 
 // NewPipelinesClient targets the Pipelines BFF, which speaks machine tokens
@@ -54,7 +75,9 @@ func NewPipelinesClient() *Client {
 	if base == "" {
 		base = DefaultPipelinesBaseURL
 	}
-	return &Client{BaseURL: base, HTTP: &http.Client{Timeout: 15 * time.Second}}
+	client := NewClientFor(base)
+	client.HTTP.Timeout = 15 * time.Second
+	return client
 }
 
 type DeviceStart struct {
@@ -92,11 +115,81 @@ type BundleEntry struct {
 // Bundle is the end-to-end encrypted response: envelopes plus the org key
 // sealed to this device's public key. The server cannot open any of it.
 type Bundle struct {
-	ProjectPublicId string        `json:"projectPublicId"`
-	Environment     string        `json:"environment"`
-	OrgKeyId        string        `json:"orgKeyId"`
-	WrappedOrgKey   string        `json:"wrappedOrgKey"`
-	Secrets         []BundleEntry `json:"secrets"`
+	ProjectPublicId string         `json:"projectPublicId"`
+	Environment     string         `json:"environment"`
+	OrgKeyId        string         `json:"orgKeyId"`
+	WrappedOrgKey   string         `json:"wrappedOrgKey"`
+	Secrets         []BundleEntry  `json:"secrets"`
+	DynamicSecrets  []DynamicHint  `json:"dynamicSecrets"`
+}
+
+type DynamicHint struct {
+	Key           string `json:"key"`
+	DefinitionId  string `json:"definitionId"`
+	EnvironmentId string `json:"environmentId"`
+	Provider      int    `json:"provider"`
+}
+
+type DynamicLease struct {
+	Id                string  `json:"id"`
+	EnvironmentId     string  `json:"environmentId"`
+	Status            int     `json:"status"`
+	RequestedAction   int     `json:"requestedAction"`
+	RequestedByName   string  `json:"requestedByName"`
+	ExpiresAt         string  `json:"expiresAt"`
+	CompletedAt       string  `json:"completedAt"`
+	EntityId          string  `json:"entityId"`
+	Error             string  `json:"error"`
+	HasMintedEnvelope bool    `json:"hasMintedEnvelope"`
+}
+
+type DynamicWorkBatch struct {
+	OrgKeyId      string            `json:"orgKeyId"`
+	WrappedOrgKey string            `json:"wrappedOrgKey"`
+	Items         []DynamicWorkItem `json:"items"`
+}
+
+type DynamicWorkItem struct {
+	LeaseId             string `json:"leaseId"`
+	DefinitionId        string `json:"definitionId"`
+	EnvironmentId       string `json:"environmentId"`
+	Key                 string `json:"key"`
+	Provider            int    `json:"provider"`
+	Action              int    `json:"action"`
+	UsernameTemplate    string `json:"usernameTemplate"`
+	CreationStatement   string `json:"creationStatement"`
+	RevocationStatement string `json:"revocationStatement"`
+	RenewStatement      string `json:"renewStatement"`
+	UrlTemplate         string `json:"urlTemplate"`
+	ProviderEnvelope    string `json:"providerEnvelope"`
+	IdentityName        string `json:"identityName"`
+	DynamicSecretName   string `json:"dynamicSecretName"`
+	ExpiresAt           string `json:"expiresAt"`
+	EntityId            string `json:"entityId"`
+}
+
+type CompleteDynamicLease struct {
+	LeaseId        string  `json:"leaseId"`
+	Ok             bool    `json:"ok"`
+	Error          string  `json:"error,omitempty"`
+	EntityId       string  `json:"entityId,omitempty"`
+	MintedEnvelope string  `json:"mintedEnvelope,omitempty"`
+	ExpiresAt      *string `json:"expiresAt,omitempty"`
+}
+
+type DynamicConnector struct {
+	Id         string `json:"id"`
+	Name       string `json:"name"`
+	LastSeenAt string `json:"lastSeenAt"`
+	Online     bool   `json:"online"`
+}
+
+type SecretEnvelope struct {
+	Key           string `json:"key"`
+	DefinitionId  string `json:"definitionId"`
+	EnvironmentId string `json:"environmentId"`
+	Envelope      string `json:"envelope"`
+	Version       int    `json:"version"`
 }
 
 type Project struct {
@@ -208,8 +301,12 @@ func (c *Client) MachineToken(clientId, clientSecret string) (*Tokens, error) {
 	if err != nil {
 		return nil, err
 	}
+	path := c.TokenPath
+	if path == "" {
+		path = "/api/token"
+	}
 	var out Tokens
-	err = c.post("/api/token", "", map[string]string{
+	err = c.post(path, "", map[string]string{
 		"clientId": clientId, "clientSecret": authSecret,
 	}, &out)
 	return &out, err
@@ -218,7 +315,68 @@ func (c *Client) MachineToken(clientId, clientSecret string) (*Tokens, error) {
 // MachineKeysMe fetches the machine's key record.
 func (c *Client) MachineKeysMe(accessToken string) (*MachineKeys, error) {
 	var out MachineKeys
-	err := c.get("/api/keys/me", accessToken, &out)
+	path := c.KeysPath
+	if path == "" {
+		path = "/api/keys/me"
+	}
+	err := c.get(path, accessToken, &out)
+	return &out, err
+}
+
+func (c *Client) dynamicPath() string {
+	if c.DynamicPath != "" {
+		return c.DynamicPath
+	}
+	return "/api/dynamic-secrets"
+}
+
+func (c *Client) RequestDynamicLease(accessToken, projectPublicId, environment, key, ttl string) (*DynamicLease, error) {
+	query := url.Values{"projectPublicId": {projectPublicId}, "environment": {environment}, "key": {key}}
+	if ttl != "" {
+		query.Set("ttl", ttl)
+	}
+	var out DynamicLease
+	err := c.post(c.dynamicPath()+"/leases?"+query.Encode(), accessToken, map[string]string{}, &out)
+	return &out, err
+}
+
+func (c *Client) GetDynamicLease(accessToken, leaseId string) (*DynamicLease, error) {
+	var out DynamicLease
+	err := c.get(c.dynamicPath()+"/leases/"+leaseId, accessToken, &out)
+	return &out, err
+}
+
+func (c *Client) DynamicLeaseEnvelope(accessToken, leaseId string) (*SecretEnvelope, error) {
+	var out SecretEnvelope
+	err := c.get(c.dynamicPath()+"/leases/"+leaseId+"/envelope", accessToken, &out)
+	return &out, err
+}
+
+func (c *Client) RegisterDynamicConnector(accessToken, name string) (*DynamicConnector, error) {
+	var out DynamicConnector
+	err := c.post(c.dynamicPath()+"/connectors", accessToken, map[string]string{"name": name}, &out)
+	return &out, err
+}
+
+func (c *Client) DynamicConnectorHeartbeat(accessToken, connectorId string) error {
+	return c.post(c.dynamicPath()+"/connectors/"+connectorId+"/heartbeat", accessToken, map[string]string{}, nil)
+}
+
+func (c *Client) DynamicWork(accessToken string) (*DynamicWorkBatch, error) {
+	var out DynamicWorkBatch
+	err := c.get(c.dynamicPath()+"/work", accessToken, &out)
+	return &out, err
+}
+
+func (c *Client) DynamicLeaseWork(accessToken, leaseId string) (*DynamicWorkBatch, error) {
+	var out DynamicWorkBatch
+	err := c.get(c.dynamicPath()+"/leases/"+leaseId+"/work", accessToken, &out)
+	return &out, err
+}
+
+func (c *Client) CompleteDynamicWork(accessToken string, body CompleteDynamicLease) (*DynamicLease, error) {
+	var out DynamicLease
+	err := c.post(c.dynamicPath()+"/work/complete", accessToken, body, &out)
 	return &out, err
 }
 

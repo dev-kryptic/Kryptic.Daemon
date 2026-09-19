@@ -26,6 +26,7 @@ import (
 	"github.com/dev-kryptic/daemon/internal/applog"
 	"github.com/dev-kryptic/daemon/internal/authstore"
 	"github.com/dev-kryptic/daemon/internal/config"
+	"github.com/dev-kryptic/daemon/internal/dynsecret"
 	"github.com/dev-kryptic/daemon/internal/ipc"
 	"github.com/dev-kryptic/daemon/internal/notify"
 )
@@ -48,6 +49,8 @@ type secretPair struct {
 
 type cacheEntry struct {
 	secrets   []secretPair
+	hints     []api.DynamicHint
+	orgKey    []byte
 	fetchedAt time.Time
 }
 
@@ -78,6 +81,7 @@ func (s *Server) Run() error {
 	applog.Event("daemon", "start", "version="+Version)
 	applog.Event("daemon", "listen")
 
+	go s.serveBrowser()
 	go s.pollOrgKeyGrant()
 
 	for {
@@ -163,10 +167,8 @@ func (s *Server) handleSecrets(req request) map[string]any {
 	cacheKey := req.ProjectId + "/" + req.Environment
 
 	s.mu.Lock()
-	if entry, hit := s.cache[cacheKey]; hit && time.Since(entry.fetchedAt) < cacheTTL {
-		s.mu.Unlock()
-		return map[string]any{"ok": true, "secrets": entry.secrets}
-	}
+	entry, hit := s.cache[cacheKey]
+	fresh := hit && time.Since(entry.fetchedAt) < cacheTTL
 	s.mu.Unlock()
 
 	token, err := s.token()
@@ -175,51 +177,70 @@ func (s *Server) handleSecrets(req request) map[string]any {
 		return errorResponse("not_authenticated", "run `kryptic login` first")
 	}
 
-	bundle, err := s.client.Bundle(token, req.ProjectId, req.Environment)
-	if err != nil {
-		var apiError *api.APIError
-		if ok := asAPIError(err, &apiError); ok {
-			applog.Error("daemon", "bundle.fetch", err, fmt.Sprintf("status=%d", apiError.Status))
-			switch apiError.Status {
-			case 401:
-				return errorResponse("not_authenticated", "session revoked - run `kryptic login`")
-			case 403:
-				message := "you have no access to this environment"
-				if apiError.Message != "" {
-					message = apiError.Message
+	var secrets []secretPair
+	var hints []api.DynamicHint
+	var orgKey []byte
+	if fresh {
+		secrets = entry.secrets
+		hints = entry.hints
+		orgKey = entry.orgKey
+	} else {
+		bundle, err := s.client.Bundle(token, req.ProjectId, req.Environment)
+		if err != nil {
+			var apiError *api.APIError
+			if ok := asAPIError(err, &apiError); ok {
+				applog.Error("daemon", "bundle.fetch", err, fmt.Sprintf("status=%d", apiError.Status))
+				switch apiError.Status {
+				case 401:
+					return errorResponse("not_authenticated", "session revoked - run `kryptic login`")
+				case 403:
+					message := "you have no access to this environment"
+					if apiError.Message != "" {
+						message = apiError.Message
+					}
+					if strings.Contains(strings.ToLower(message), "organization key") {
+						notifyMissingOrgKey()
+					} else {
+						notifyProjectDenied(req.ProjectId, req.Environment, message)
+					}
+					return errorResponse("access_denied", message)
+				case 404:
+					if isUnknownEnvironment(apiError) {
+						return errorResponse("unknown_environment", apiError.Message)
+					}
+					return errorResponse("unknown_project", apiError.Message)
 				}
-				if strings.Contains(strings.ToLower(message), "organization key") {
-					notifyMissingOrgKey()
-				} else {
-					notifyProjectDenied(req.ProjectId, req.Environment, message)
-				}
-				return errorResponse("access_denied", message)
-			case 404:
-				if isUnknownEnvironment(apiError) {
-					return errorResponse("unknown_environment", apiError.Message)
-				}
-				return errorResponse("unknown_project", apiError.Message)
 			}
+			return errorResponse("internal", err.Error())
 		}
-		return errorResponse("internal", err.Error())
+
+		decrypted, key, err := decryptBundle(bundle)
+		if err != nil {
+			log.Printf("bundle decrypt failed for %s/%s", req.ProjectId, req.Environment)
+			applog.Event("daemon", "bundle.decrypt", "result=error")
+			if isGrantFailure(err) {
+				notifyMissingOrgKey()
+				return errorResponse("access_denied", err.Error())
+			}
+			return errorResponse("internal", err.Error())
+		}
+		secrets = decrypted
+		hints = bundle.DynamicSecrets
+		orgKey = key
+		s.mu.Lock()
+		s.cache[cacheKey] = cacheEntry{secrets: secrets, hints: hints, orgKey: orgKey, fetchedAt: time.Now()}
+		s.mu.Unlock()
 	}
 
-	secrets, err := decryptBundle(bundle)
-	if err != nil {
-		log.Printf("bundle decrypt failed for %s/%s", req.ProjectId, req.Environment)
-		applog.Event("daemon", "bundle.decrypt", "result=error")
-		// PROTOCOL.md: no org-key grant (missing, stale, or wrong device key)
-		// is access_denied so packages skip the same way as a project 403.
-		if isGrantFailure(err) {
-			notifyMissingOrgKey()
-			return errorResponse("access_denied", err.Error())
+	if len(hints) > 0 {
+		leased, err := dynsecret.Fetch(s.client, token, req.ProjectId, req.Environment, hints, orgKey)
+		if err != nil {
+			return errorResponse("internal", err.Error())
 		}
-		return errorResponse("internal", err.Error())
+		for _, pair := range leased {
+			secrets = append(secrets, secretPair{Key: pair.Key, Value: pair.Value})
+		}
 	}
-
-	s.mu.Lock()
-	s.cache[cacheKey] = cacheEntry{secrets: secrets, fetchedAt: time.Now()}
-	s.mu.Unlock()
 
 	log.Printf("served %d secrets for %s/%s (decrypted locally)", len(secrets), req.ProjectId, req.Environment)
 	applog.Event("daemon", "bundle.ok", fmt.Sprintf("count=%d", len(secrets)))
@@ -228,32 +249,32 @@ func (s *Server) handleSecrets(req request) map[string]any {
 
 // decryptBundle unwraps the org key with this device's private key and opens
 // every envelope. All crypto happens here, on the developer's machine.
-func decryptBundle(bundle *api.Bundle) ([]secretPair, error) {
+func decryptBundle(bundle *api.Bundle) ([]secretPair, []byte, error) {
 	session, err := authstore.LoadSession()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if session.DevicePrivateKey == "" {
-		return nil, fmt.Errorf("this session has no device key - run `kryptic login` again")
+		return nil, nil, fmt.Errorf("this session has no device key - run `kryptic login` again")
 	}
 
 	enc := base64.RawURLEncoding
 	private, err := enc.DecodeString(session.DevicePrivateKey)
 	if err != nil {
-		return nil, fmt.Errorf("stored device key is corrupt - run `kryptic login` again")
+		return nil, nil, fmt.Errorf("stored device key is corrupt - run `kryptic login` again")
 	}
 	public, err := enc.DecodeString(session.DevicePublicKey)
 	if err != nil {
-		return nil, fmt.Errorf("stored device key is corrupt - run `kryptic login` again")
+		return nil, nil, fmt.Errorf("stored device key is corrupt - run `kryptic login` again")
 	}
 
 	sealed, err := sealedbox.Parse(bundle.WrappedOrgKey)
 	if err != nil {
-		return nil, fmt.Errorf("invalid wrapped org key: %w", err)
+		return nil, nil, fmt.Errorf("invalid wrapped org key: %w", err)
 	}
 	orgKey, err := sealedbox.Open(sealedbox.KeyPair{Public: public, Private: private}, sealed)
 	if err != nil {
-		return nil, fmt.Errorf("could not unwrap the org key - the device grant may be stale, run `kryptic login` again")
+		return nil, nil, fmt.Errorf("could not unwrap the org key - the device grant may be stale, run `kryptic login` again")
 	}
 
 	secrets := make([]secretPair, 0, len(bundle.Secrets))
@@ -261,11 +282,11 @@ func decryptBundle(bundle *api.Bundle) ([]secretPair, error) {
 		associatedData := envelope.SecretContext(entry.DefinitionId, entry.EnvironmentId)
 		plaintext, err := envelope.Open(orgKey, entry.Envelope, associatedData)
 		if err != nil {
-			return nil, fmt.Errorf("decrypt %q: %w", entry.Key, err)
+			return nil, nil, fmt.Errorf("decrypt %q: %w", entry.Key, err)
 		}
 		secrets = append(secrets, secretPair{Key: entry.Key, Value: string(plaintext)})
 	}
-	return secrets, nil
+	return secrets, orgKey, nil
 }
 
 // ResetAuth drops the in-memory access token and cached bundles - called by the

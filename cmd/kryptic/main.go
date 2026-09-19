@@ -63,6 +63,8 @@ func main() {
 		err = whoami(client)
 	case "secrets":
 		err = secrets()
+	case "connector":
+		err = connector()
 	case "ci":
 		err = ci()
 	case "flush":
@@ -109,6 +111,7 @@ func usage() {
   kryptic logs                  print the diagnostics log path (send this file to support)
   kryptic logs --reveal         open the diagnostics log in the file manager
   kryptic ci export --project proj_x --env production   pipeline secrets, decrypted locally
+  kryptic connector run [--name NAME]   mint and revoke dynamic secret leases
   kryptic scan [PATH]           scan files for leaked secrets (--staged, --export [FILE|DIR])
   kryptic update                update kryptic to the latest release
   kryptic update --check        report whether a newer release exists (exit 2 if so)

@@ -32,6 +32,7 @@ import (
 	"github.com/dev-kryptic/daemon/internal/pidfile"
 	"github.com/dev-kryptic/daemon/internal/server"
 	"github.com/dev-kryptic/daemon/internal/singleinstance"
+	"github.com/dev-kryptic/daemon/internal/termopen"
 	"github.com/dev-kryptic/daemon/internal/update"
 )
 
@@ -98,6 +99,8 @@ func onReady() {
 
 	opsMenu := systray.AddMenuItem("Operations", "")
 	flushItem := opsMenu.AddSubMenuItem("Refresh Secrets Cache", "")
+	connectorItem := opsMenu.AddSubMenuItem("Start \"Dynamic-Secrets\" Connector", "")
+	connectorItem.Disable()
 	scanItem := opsMenu.AddSubMenuItem("Scan for secrets", "")
 
 	settingsMenu := systray.AddMenuItem("Settings", "")
@@ -160,6 +163,7 @@ func onReady() {
 				cancelItem.Hide()
 				signInItem.Show()
 			}
+			connectorItem.Disable()
 			statusItem.SetTitle("Connecting…")
 			return
 		}
@@ -233,10 +237,12 @@ func onReady() {
 			signInItem.Hide()
 			cancelItem.Hide()
 			signOutItem.Show()
+			connectorItem.Enable()
 		} else {
 			signOutItem.Hide()
 			cancelItem.Hide()
 			signInItem.Show()
+			connectorItem.Disable()
 		}
 	}
 
@@ -312,6 +318,12 @@ func onReady() {
 		systray.Quit()
 	}
 
+	runConnector := func() {
+		if err := termopen.Connector(); err != nil {
+			dialog.Info("Kryptic", err.Error())
+		}
+	}
+
 	doSwitch := func(id string) {
 		if id == "" {
 			return
@@ -362,6 +374,8 @@ func onReady() {
 				doDelete(arg)
 			case "flush":
 				_, _ = ipc.Request(map[string]any{"type": "flush"})
+			case "connector":
+				runConnector()
 			case "scan":
 				panel.setScan(true)
 				runFolderScan(scanItem)
@@ -411,6 +425,7 @@ func onReady() {
 	})
 	listen(addAccountItem, func() { startLogin(true) })
 	listen(flushItem, func() { _, _ = ipc.Request(map[string]any{"type": "flush"}) })
+	listen(connectorItem, runConnector)
 	listen(scanItem, func() { runFolderScan(scanItem) })
 	listen(updateItem, func() { runUpdateFlow(updateItem) })
 	listen(serverItem, func() {

@@ -156,6 +156,11 @@ final class AppState: ObservableObject {
         }
     }
 
+    func runConnector() {
+        guard let binary = DaemonController.binaryURL() else { return }
+        ConnectorTerminal.open(binary: binary)
+    }
+
     func scanFolder() {
         guard let binary = DaemonController.binaryURL() else { return }
         ScanPresenter.start(binary: binary) { [weak self] busy in

@@ -37,6 +37,7 @@ func ActionRows(snap Snapshot) []Row {
 	}
 	rows = append(rows,
 		Row{Name: "flush", Label: "Refresh Secrets Cache"},
+		Row{Name: "connector", Label: "Start \"Dynamic-Secrets\" Connector"},
 		Row{Name: "scan", Label: scan},
 		Row{Name: "update", Label: update},
 		Row{Name: "serverURI", Label: "Server URI"},
@@ -52,7 +53,7 @@ func ActionRows(snap Snapshot) []Row {
 func KnownAction(name string) bool {
 	switch name {
 	case "signIn", "signOut", "cancelLogin", "addAccount", "switchProfile", "deleteProfile",
-		"flush", "scan", "update", "serverURI", "github", "docs", "logs", "about", "quit":
+		"flush", "connector", "scan", "update", "serverURI", "github", "docs", "logs", "about", "quit":
 		return true
 	default:
 		return false

@@ -16,6 +16,7 @@ import (
 	"github.com/dev-kryptic/Kryptic.Encryption.Go/kdf"
 	"github.com/dev-kryptic/Kryptic.Encryption.Go/sealedbox"
 	"github.com/dev-kryptic/daemon/internal/api"
+	"github.com/dev-kryptic/daemon/internal/dynsecret"
 )
 
 func ci() error {
@@ -77,9 +78,18 @@ func ciExport() error {
 		return fmt.Errorf("fetching secrets bundle: %w", err)
 	}
 
-	pairs, err := decryptMachineBundle(clientSecret, keys, bundle)
+	pairs, orgKey, err := decryptMachineBundle(clientSecret, keys, bundle)
 	if err != nil {
 		return err
+	}
+	if len(bundle.DynamicSecrets) > 0 {
+		leased, err := dynsecret.Fetch(client, tokens.AccessToken, projectId, environment, bundle.DynamicSecrets, orgKey)
+		if err != nil {
+			return err
+		}
+		for _, pair := range leased {
+			pairs = append(pairs, ciPair{Key: pair.Key, Value: pair.Value})
+		}
 	}
 
 	switch format {
@@ -127,33 +137,33 @@ func exportablePairs(pairs []ciPair) []ciPair {
 // decryptMachineBundle runs the full local decryption chain:
 // clientSecret -Argon2id-> unwrap machine private key -sealed box-> org key
 // -AES-GCM-> plaintext values.
-func decryptMachineBundle(clientSecret string, keys *api.MachineKeys, bundle *api.Bundle) ([]ciPair, error) {
+func decryptMachineBundle(clientSecret string, keys *api.MachineKeys, bundle *api.Bundle) ([]ciPair, []byte, error) {
 	enc := base64.RawURLEncoding
 	salt, err := enc.DecodeString(keys.KdfSalt)
 	if err != nil {
-		return nil, fmt.Errorf("invalid KDF salt encoding: %w", err)
+		return nil, nil, fmt.Errorf("invalid KDF salt encoding: %w", err)
 	}
 	secretKey, err := kdf.ForVersion(keys.KdfParametersVersion, clientSecret, salt)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	privateKey, err := envelope.Open(secretKey, keys.WrappedPrivateKey, nil)
 	if err != nil {
-		return nil, fmt.Errorf("could not unwrap the machine private key - wrong client secret?")
+		return nil, nil, fmt.Errorf("could not unwrap the machine private key - wrong client secret?")
 	}
 	publicKey, err := enc.DecodeString(keys.PublicKey)
 	if err != nil {
-		return nil, fmt.Errorf("invalid machine public key encoding: %w", err)
+		return nil, nil, fmt.Errorf("invalid machine public key encoding: %w", err)
 	}
 
 	sealed, err := sealedbox.Parse(bundle.WrappedOrgKey)
 	if err != nil {
-		return nil, fmt.Errorf("invalid wrapped org key: %w", err)
+		return nil, nil, fmt.Errorf("invalid wrapped org key: %w", err)
 	}
 	orgKey, err := sealedbox.Open(sealedbox.KeyPair{Public: publicKey, Private: privateKey}, sealed)
 	if err != nil {
-		return nil, fmt.Errorf("could not unwrap the org key - the machine grant may be stale, rotate the identity")
+		return nil, nil, fmt.Errorf("could not unwrap the org key - the machine grant may be stale, rotate the identity")
 	}
 
 	pairs := make([]ciPair, 0, len(bundle.Secrets))
@@ -161,9 +171,9 @@ func decryptMachineBundle(clientSecret string, keys *api.MachineKeys, bundle *ap
 		associatedData := envelope.SecretContext(entry.DefinitionId, entry.EnvironmentId)
 		plaintext, err := envelope.Open(orgKey, entry.Envelope, associatedData)
 		if err != nil {
-			return nil, fmt.Errorf("decrypt %q: %w", entry.Key, err)
+			return nil, nil, fmt.Errorf("decrypt %q: %w", entry.Key, err)
 		}
 		pairs = append(pairs, ciPair{Key: entry.Key, Value: string(plaintext)})
 	}
-	return pairs, nil
+	return pairs, orgKey, nil
 }

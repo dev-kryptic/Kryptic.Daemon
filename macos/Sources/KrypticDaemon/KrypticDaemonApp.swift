@@ -106,6 +106,11 @@ private struct MenuBarContent: View {
                 }
                 .disabled(!appState.status.running)
 
+                Button("Start \"Dynamic-Secrets\" Connector") {
+                    appState.runConnector()
+                }
+                .disabled(!appState.binaryAvailable || !appState.status.authenticated)
+
                 Button(appState.scanInProgress ? "Scanning…" : "Scan for secrets") {
                     appState.scanFolder()
                 }

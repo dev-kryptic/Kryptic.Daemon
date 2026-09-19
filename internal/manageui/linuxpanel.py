@@ -259,9 +259,12 @@ class Panel(Gtk.Window):
         box_add(root, section("OPERATIONS"))
         self.flush = button("Refresh Secrets Cache")
         self.flush.connect("clicked", lambda *_: emit("flush"))
+        self.connector = button('Start "Dynamic-Secrets" Connector')
+        self.connector.connect("clicked", lambda *_: emit("connector"))
         self.scan = button("Scan for secrets")
         self.scan.connect("clicked", lambda *_: emit("scan"))
         box_add(root, self.flush)
+        box_add(root, self.connector)
         box_add(root, self.scan)
 
         box_add(root, section("SETTINGS"))
@@ -358,6 +361,7 @@ class Panel(Gtk.Window):
 
         self.add_account.set_sensitive(bool(snap.get("canLogin")) and not snap.get("loginInProgress"))
         self.flush.set_sensitive(bool(snap.get("running")))
+        self.connector.set_sensitive(bool(snap.get("authenticated")))
         if snap.get("scanInProgress"):
             self.scan.set_label("Scanning…")
             self.scan.set_sensitive(False)

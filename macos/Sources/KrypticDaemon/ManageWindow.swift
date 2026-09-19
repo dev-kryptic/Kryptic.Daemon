@@ -99,6 +99,9 @@ struct ManageWindow: View {
         panelButton("Refresh Secrets Cache", kind: .surface, disabled: !appState.status.running) {
             appState.refreshSecretsCache()
         }
+        panelButton("Start \"Dynamic-Secrets\" Connector", kind: .surface, disabled: !appState.binaryAvailable || !appState.status.authenticated) {
+            appState.runConnector()
+        }
         panelButton(appState.scanInProgress ? "Scanning…" : "Scan for secrets", kind: .surface, disabled: !appState.binaryAvailable || appState.scanInProgress) {
             appState.scanFolder()
         }

@@ -5,6 +5,28 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+### Fixed
+
+- `kryptic connector run` refreshes its access token after a 401 so a
+  Daemon BFF restart or token expiry does not leave the poller unauthorized.
+- Cassandra `{{database}}` / `{{keyspace}}` both resolve. The form stores the
+  name as `keyspace`, so GRANT used to mint `KEYSPACE  TO` and fail.
+- Oracle leases mint in the default `kryptic` binary. The connector uses a
+  pure-Go driver, so Instant Client and `-tags oracle` are no longer required.
+- Dashboard Generate lease talks to the local daemon on `127.0.0.1:5278`.
+  If the daemon is down, the drawer refuses to create a lease. The daemon
+  mints that row itself so it never sits on the org connector queue.
+
+### Added
+
+- Operations → Start "Dynamic-Secrets" Connector (menu bar, tray, and Open
+  Kryptic) opens a terminal running `kryptic connector run --name local` so
+  lease mint and revoke logs stay on screen.
+- `kryptic connector run` mints and revokes Enterprise dynamic secret leases
+  (Postgres, MySQL, Redis, Cassandra, Oracle, AWS IAM). The connector decrypts
+  provider config locally. `kryptic secrets` / `kryptic ci export` request a
+  lease for each dynamic key and inject `{KEY}_USERNAME` / `{KEY}_PASSWORD`.
+
 ## 1.2.0 - 2026-09-13
 
 ### Added

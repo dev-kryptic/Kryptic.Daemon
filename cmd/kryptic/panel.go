@@ -16,6 +16,7 @@ import (
 	"github.com/dev-kryptic/daemon/internal/login"
 	"github.com/dev-kryptic/daemon/internal/manageui"
 	"github.com/dev-kryptic/daemon/internal/server"
+	"github.com/dev-kryptic/daemon/internal/termopen"
 )
 
 func runPanel() error {
@@ -104,6 +105,10 @@ func handlePanelAction(client *api.Client, name, arg string) {
 		client.BaseURL = next
 	case "flush":
 		_, _ = ipc.Request(map[string]any{"type": "flush"})
+	case "connector":
+		if err := termopen.Connector(); err != nil {
+			dialog.Info("Kryptic", err.Error())
+		}
 	case "github":
 		about.OpenGitHub()
 	case "docs":

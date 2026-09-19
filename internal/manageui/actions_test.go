@@ -17,7 +17,7 @@ func TestActionRowsCoverEveryCommand(t *testing.T) {
 	}
 	for _, name := range []string{
 		"signOut", "addAccount", "switchProfile", "deleteProfile",
-		"flush", "scan", "update", "serverURI",
+		"flush", "connector", "scan", "update", "serverURI",
 		"github", "docs", "logs", "about", "quit",
 	} {
 		if !got[name] {

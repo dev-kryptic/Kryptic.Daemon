@@ -35,8 +35,9 @@ const (
 	idDocs    = 108
 	idLogs    = 109
 	idAbout   = 110
-	idQuit    = 111
-	idProfile = 200
+	idQuit      = 111
+	idConnector = 112
+	idProfile   = 200
 	idDelete  = 300
 )
 
@@ -73,8 +74,9 @@ type form struct {
 	addHWND     windows.Handle
 	opsLine     windows.Handle
 	opsSec      windows.Handle
-	flushHWND   windows.Handle
-	scanHWND    windows.Handle
+	flushHWND     windows.Handle
+	connectorHWND windows.Handle
+	scanHWND      windows.Handle
 	setLine     windows.Handle
 	setSec      windows.Handle
 	updateHWND  windows.Handle
@@ -225,6 +227,7 @@ func createBody(parent, instance windows.Handle, f *form) {
 	f.opsLine = rule(parent, instance)
 	f.opsSec = label(parent, instance, f.sectionFnt, "OPERATIONS", pad, pad, inner, 16)
 	f.flushHWND = winui.CreateButton(parent, instance, idFlush, pad, pad, inner, btnH, "Refresh Secrets Cache", winui.ButtonGhost, f.buttonFnt)
+	f.connectorHWND = winui.CreateButton(parent, instance, idConnector, pad, pad, inner, btnH, "Start \"Dynamic-Secrets\" Connector", winui.ButtonGhost, f.buttonFnt)
 	f.scanHWND = winui.CreateButton(parent, instance, idScan, pad, pad, inner, btnH, "Scan for secrets", winui.ButtonGhost, f.buttonFnt)
 
 	f.setLine = rule(parent, instance)
@@ -298,6 +301,8 @@ func layout(f *form, shown int, scroll int32) int32 {
 
 	y = section(f.opsLine, f.opsSec, y)
 	place(f.flushHWND, pad, y, inner, btnH)
+	y += btnH + gap
+	place(f.connectorHWND, pad, y, inner, btnH)
 	y += btnH + gap
 	place(f.scanHWND, pad, y, inner, btnH)
 	y += btnH + gap
@@ -417,6 +422,7 @@ func paint(f *form) {
 	}
 	winui.Enable(f.addHWND, snap.CanLogin && !snap.LoginInProgress)
 	winui.Enable(f.flushHWND, snap.Running)
+	winui.Enable(f.connectorHWND, snap.Authenticated)
 	if snap.ScanInProgress {
 		winui.SetText(f.scanHWND, "Scanning…")
 		winui.Enable(f.scanHWND, false)
@@ -558,6 +564,8 @@ func handleClick(f *form, id uintptr) {
 		handlers.fire("addAccount", "")
 	case idFlush:
 		handlers.fire("flush", "")
+	case idConnector:
+		handlers.fire("connector", "")
 	case idScan:
 		handlers.fire("scan", "")
 	case idUpdate:
