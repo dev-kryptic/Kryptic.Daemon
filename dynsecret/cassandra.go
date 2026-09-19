@@ -9,7 +9,8 @@ import (
 
 type cassandraProvider struct{}
 
-func cassandraSession(cfg ProviderConfig) (*gocql.Session, error) {
+func cassandraSession(cfg ProviderConfig) (*gocql.Session, func(), error) {
+	cleanup := func() {}
 	hosts := strings.Split(cfg.Hosts, ",")
 	if len(hosts) == 1 && strings.TrimSpace(hosts[0]) == "" && cfg.Host != "" {
 		hosts = []string{cfg.Host}
@@ -32,14 +33,34 @@ func cassandraSession(cfg ProviderConfig) (*gocql.Session, error) {
 	} else if cfg.Database != "" {
 		cluster.Keyspace = cfg.Database
 	}
-	return cluster.CreateSession()
+	if cfg.TLS || cfg.SSL {
+		opts := &gocql.SslOptions{
+			EnableHostVerification: cfg.SSLVerify == nil || *cfg.SSLVerify,
+		}
+		if strings.TrimSpace(cfg.CA) != "" {
+			path, caCleanup, err := writeTempCA(cfg.CA)
+			if err != nil {
+				return nil, cleanup, err
+			}
+			cleanup = caCleanup
+			opts.CaPath = path
+		}
+		cluster.SslOpts = opts
+	}
+	session, err := cluster.CreateSession()
+	if err != nil {
+		cleanup()
+		return nil, func() {}, err
+	}
+	return session, cleanup, nil
 }
 
 func (cassandraProvider) Mint(ctx context.Context, work WorkContext) (Minted, error) {
-	session, err := cassandraSession(work.Config)
+	session, cleanup, err := cassandraSession(work.Config)
 	if err != nil {
 		return Minted{}, err
 	}
+	defer cleanup()
 	defer session.Close()
 	if err := cqlExec(ctx, session, RenderStatements(work.CreationStatement, StatementVars(work))); err != nil {
 		return Minted{}, err
@@ -50,10 +71,11 @@ func (cassandraProvider) Mint(ctx context.Context, work WorkContext) (Minted, er
 func (cassandraProvider) Renew(context.Context, WorkContext) error { return nil }
 
 func (cassandraProvider) Revoke(ctx context.Context, work WorkContext) error {
-	session, err := cassandraSession(work.Config)
+	session, cleanup, err := cassandraSession(work.Config)
 	if err != nil {
 		return err
 	}
+	defer cleanup()
 	defer session.Close()
 	return cqlExec(ctx, session, RenderStatements(work.RevocationStatement, StatementVars(work)))
 }
@@ -66,4 +88,3 @@ func cqlExec(ctx context.Context, session *gocql.Session, script string) error {
 	}
 	return nil
 }
-

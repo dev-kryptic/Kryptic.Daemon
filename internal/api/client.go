@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dev-kryptic/Kryptic.Encryption.Go/kdf"
+	"github.com/dev-kryptic/daemon/dynsecret"
 	"github.com/dev-kryptic/daemon/internal/applog"
 	"github.com/dev-kryptic/daemon/internal/authstore"
 	"github.com/dev-kryptic/daemon/internal/config"
@@ -144,28 +145,9 @@ type DynamicLease struct {
 }
 
 type DynamicWorkBatch struct {
-	OrgKeyId      string            `json:"orgKeyId"`
-	WrappedOrgKey string            `json:"wrappedOrgKey"`
-	Items         []DynamicWorkItem `json:"items"`
-}
-
-type DynamicWorkItem struct {
-	LeaseId             string `json:"leaseId"`
-	DefinitionId        string `json:"definitionId"`
-	EnvironmentId       string `json:"environmentId"`
-	Key                 string `json:"key"`
-	Provider            int    `json:"provider"`
-	Action              int    `json:"action"`
-	UsernameTemplate    string `json:"usernameTemplate"`
-	CreationStatement   string `json:"creationStatement"`
-	RevocationStatement string `json:"revocationStatement"`
-	RenewStatement      string `json:"renewStatement"`
-	UrlTemplate         string `json:"urlTemplate"`
-	ProviderEnvelope    string `json:"providerEnvelope"`
-	IdentityName        string `json:"identityName"`
-	DynamicSecretName   string `json:"dynamicSecretName"`
-	ExpiresAt           string `json:"expiresAt"`
-	EntityId            string `json:"entityId"`
+	OrgKeyId      string         `json:"orgKeyId"`
+	WrappedOrgKey string         `json:"wrappedOrgKey"`
+	Items         []dynsecret.WorkItem `json:"items"`
 }
 
 type CompleteDynamicLease struct {
@@ -362,6 +344,10 @@ func (c *Client) DynamicConnectorHeartbeat(accessToken, connectorId string) erro
 	return c.post(c.dynamicPath()+"/connectors/"+connectorId+"/heartbeat", accessToken, map[string]string{}, nil)
 }
 
+func (c *Client) DynamicConnectorDisconnect(accessToken, connectorId string) error {
+	return c.post(c.dynamicPath()+"/connectors/"+connectorId+"/disconnect", accessToken, map[string]string{}, nil)
+}
+
 func (c *Client) DynamicWork(accessToken string) (*DynamicWorkBatch, error) {
 	var out DynamicWorkBatch
 	err := c.get(c.dynamicPath()+"/work", accessToken, &out)
@@ -371,6 +357,12 @@ func (c *Client) DynamicWork(accessToken string) (*DynamicWorkBatch, error) {
 func (c *Client) DynamicLeaseWork(accessToken, leaseId string) (*DynamicWorkBatch, error) {
 	var out DynamicWorkBatch
 	err := c.get(c.dynamicPath()+"/leases/"+leaseId+"/work", accessToken, &out)
+	return &out, err
+}
+
+func (c *Client) RevokeDynamicLease(accessToken, leaseId string) (*DynamicLease, error) {
+	var out DynamicLease
+	err := c.post(c.dynamicPath()+"/leases/"+leaseId+"/revoke", accessToken, map[string]string{}, &out)
 	return &out, err
 }
 

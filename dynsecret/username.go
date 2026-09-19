@@ -213,20 +213,31 @@ func Sanitize(value string) string {
 	return b.String()
 }
 
+// RandomString draws uniformly from the 62-character alphabet. Bytes >= 248
+// are rejected instead of reduced modulo 62, so no character is more likely
+// than another. It panics if the OS entropy source fails: minting a lease
+// password from anything weaker must never happen silently.
 func RandomString(length int) string {
 	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	const limit = byte(256 - 256%len(alphabet)) // 248
 	if length < 1 {
 		length = 1
 	}
-	buf := make([]byte, length)
-	if _, err := rand.Read(buf); err != nil {
-		for i := range buf {
-			buf[i] = alphabet[i%len(alphabet)]
+	out := make([]byte, 0, length)
+	buf := make([]byte, 64)
+	for len(out) < length {
+		if _, err := rand.Read(buf); err != nil {
+			panic("kryptic: crypto/rand is unavailable: " + err.Error())
 		}
-		return string(buf)
+		for _, b := range buf {
+			if b >= limit {
+				continue
+			}
+			out = append(out, alphabet[int(b)%len(alphabet)])
+			if len(out) == length {
+				break
+			}
+		}
 	}
-	for i, b := range buf {
-		buf[i] = alphabet[int(b)%len(alphabet)]
-	}
-	return string(buf)
+	return string(out)
 }

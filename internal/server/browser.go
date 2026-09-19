@@ -40,7 +40,7 @@ func (s *Server) serveBrowser() {
 }
 
 func (s *Server) handleBrowserStatus(w http.ResponseWriter, r *http.Request) {
-	writeBrowserCORS(w, r, true)
+	writeBrowserCORS(w, r, s.client.BaseURL)
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -62,7 +62,7 @@ func (s *Server) handleBrowserStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBrowserLease(w http.ResponseWriter, r *http.Request) {
-	writeBrowserCORS(w, r, false)
+	writeBrowserCORS(w, r, s.client.BaseURL)
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -71,7 +71,7 @@ func (s *Server) handleBrowserLease(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !browserOriginAllowed(r.Header.Get("Origin")) {
+	if !browserOriginAllowed(r.Header.Get("Origin"), s.client.BaseURL) {
 		http.Error(w, "forbidden origin", http.StatusForbidden)
 		return
 	}
@@ -124,15 +124,11 @@ func unwrapDeviceOrgKey(_, wrapped string) ([]byte, error) {
 	return sealedbox.Open(sealedbox.KeyPair{Public: public, Private: private}, sealed)
 }
 
-func writeBrowserCORS(w http.ResponseWriter, r *http.Request, allowAny bool) {
-	origin := r.Header.Get("Origin")
-	if allowAny {
-		if origin == "" {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-		} else {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-		}
-	} else if browserOriginAllowed(origin) {
+// writeBrowserCORS reflects the Origin only when it is on the dashboard
+// allowlist. Random websites cannot read /status (daemon presence, version,
+// signed-in state) or the mint response from a victim's browser.
+func writeBrowserCORS(w http.ResponseWriter, r *http.Request, baseURL string) {
+	if origin := r.Header.Get("Origin"); browserOriginAllowed(origin, baseURL) {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 	}
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -141,7 +137,13 @@ func writeBrowserCORS(w http.ResponseWriter, r *http.Request, allowAny bool) {
 	w.Header().Set("Vary", "Origin")
 }
 
-func browserOriginAllowed(origin string) bool {
+// browserOriginAllowed pins the hosted dashboard (https://app.kryptic.dev),
+// loopback hosts for local development, the dashboard implied by the
+// self-hosted Daemon BFF the daemon is signed into, and exact-match extras
+// from KRYPTIC_DASHBOARD_ORIGINS. No wildcard subdomains and no plain http
+// off the loopback: a compromised marketing subdomain or an http MITM page
+// must not be able to drive mints.
+func browserOriginAllowed(origin, baseURL string) bool {
 	if origin == "" {
 		return false
 	}
@@ -153,15 +155,37 @@ func browserOriginAllowed(origin string) bool {
 	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
 		return true
 	}
-	if host == "app.kryptic.dev" || strings.HasSuffix(host, ".kryptic.dev") {
-		return true
-	}
 	for _, extra := range strings.Split(os.Getenv("KRYPTIC_DASHBOARD_ORIGINS"), ",") {
 		if strings.EqualFold(strings.TrimSpace(extra), origin) {
 			return true
 		}
 	}
-	return false
+	if parsed.Scheme == "https" && host == "app.kryptic.dev" {
+		return true
+	}
+	return selfHostedDashboard(parsed, baseURL)
+}
+
+// selfHostedDashboard trusts the dashboard implied by the Daemon BFF URL the
+// daemon signed into: the BFF host itself, and its parent when the BFF sits
+// on the reference kit's daemon. subdomain (daemon.kryptic.example.com next
+// to the dashboard on kryptic.example.com). Signing in is the trust anchor;
+// no extra env is needed on a standard self-hosted install. Hosted kryptic.dev
+// is excluded: its dashboard pin is explicit and the apex must never qualify.
+func selfHostedDashboard(origin *url.URL, baseURL string) bool {
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return false
+	}
+	baseHost := strings.ToLower(base.Hostname())
+	if baseHost == "" || baseHost == "kryptic.dev" || strings.HasSuffix(baseHost, ".kryptic.dev") {
+		return false
+	}
+	if origin.Scheme != "https" && origin.Scheme != base.Scheme {
+		return false
+	}
+	host := strings.ToLower(origin.Hostname())
+	return host == baseHost || "daemon."+host == baseHost
 }
 
 func writeJSON(w http.ResponseWriter, status int, body map[string]any) {

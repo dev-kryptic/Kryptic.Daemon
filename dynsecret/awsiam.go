@@ -2,6 +2,7 @@ package dynsecret
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -162,6 +163,10 @@ func (awsProvider) Revoke(ctx context.Context, work WorkContext) error {
 	}
 	keys, err := client.ListAccessKeys(ctx, &iam.ListAccessKeysInput{UserName: aws.String(name)})
 	if err != nil {
+		var notFound *iamtypes.NoSuchEntityException
+		if errors.As(err, &notFound) {
+			return nil
+		}
 		return err
 	}
 	for _, key := range keys.AccessKeyMetadata {
@@ -170,10 +175,16 @@ func (awsProvider) Revoke(ctx context.Context, work WorkContext) error {
 			AccessKeyId: key.AccessKeyId,
 		})
 	}
+	// DeleteUser refuses while the inline lease policy exists, which would
+	// leave the minted IAM user alive past revocation.
+	_, _ = client.DeleteUserPolicy(ctx, &iam.DeleteUserPolicyInput{
+		UserName:   aws.String(name),
+		PolicyName: aws.String("kryptic-lease"),
+	})
 	_, err = client.DeleteUser(ctx, &iam.DeleteUserInput{UserName: aws.String(name)})
 	if err != nil {
 		var notFound *iamtypes.NoSuchEntityException
-		if strings.Contains(err.Error(), "NoSuchEntity") || notFound != nil {
+		if errors.As(err, &notFound) {
 			return nil
 		}
 	}

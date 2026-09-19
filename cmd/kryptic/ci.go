@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -20,10 +21,15 @@ import (
 )
 
 func ci() error {
-	if len(os.Args) < 3 || os.Args[2] != "export" {
+	if len(os.Args) < 3 {
 		fmt.Println(`kryptic ci - pipeline secrets (machine credentials)
 
   kryptic ci export --project proj_x --env production [--format dotenv|shell|json]
+  kryptic ci revoke [--lease ID]...
+
+export mints dynamic leases on this runner. revoke drops those roles.
+KRYPTIC_DYNAMIC_LEASES is written by export and read by revoke when
+--lease is omitted.
 
 Credentials come from the environment:
   KRYPTIC_CLIENT_ID       machine identity client id (kmi_...)
@@ -31,7 +37,14 @@ Credentials come from the environment:
   KRYPTIC_PIPELINES_API   optional API URL override`)
 		return nil
 	}
-	return ciExport()
+	switch os.Args[2] {
+	case "export":
+		return ciExport()
+	case "revoke":
+		return ciRevoke()
+	default:
+		return fmt.Errorf("unknown ci command %q (export or revoke)", os.Args[2])
+	}
 }
 
 func ciExport() error {
@@ -82,13 +95,19 @@ func ciExport() error {
 	if err != nil {
 		return err
 	}
+	unwrap := func(_, wrapped string) ([]byte, error) {
+		return unwrapMachineOrgKey(clientSecret, keys, wrapped)
+	}
 	if len(bundle.DynamicSecrets) > 0 {
-		leased, err := dynsecret.Fetch(client, tokens.AccessToken, projectId, environment, bundle.DynamicSecrets, orgKey)
+		leased, err := dynsecret.Fetch(context.Background(), client, tokens.AccessToken, projectId, environment, bundle.DynamicSecrets, unwrap, orgKey)
 		if err != nil {
 			return err
 		}
-		for _, pair := range leased {
+		for _, pair := range leased.Pairs {
 			pairs = append(pairs, ciPair{Key: pair.Key, Value: pair.Value})
+		}
+		if len(leased.LeaseIDs) > 0 {
+			pairs = append(pairs, ciPair{Key: "KRYPTIC_DYNAMIC_LEASES", Value: strings.Join(leased.LeaseIDs, ",")})
 		}
 	}
 
@@ -108,6 +127,59 @@ func ciExport() error {
 		}
 		encoded, _ := json.MarshalIndent(object, "", "  ")
 		fmt.Println(string(encoded))
+	}
+	return nil
+}
+
+func ciRevoke() error {
+	var ids []string
+	args := os.Args[3:]
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--lease" && i+1 < len(args) {
+			i++
+			ids = append(ids, args[i])
+		}
+	}
+	if len(ids) == 0 {
+		for _, part := range strings.Split(os.Getenv("KRYPTIC_DYNAMIC_LEASES"), ",") {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				ids = append(ids, part)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return fmt.Errorf("set --lease ID or KRYPTIC_DYNAMIC_LEASES (written by kryptic ci export)")
+	}
+
+	clientId := os.Getenv("KRYPTIC_CLIENT_ID")
+	clientSecret := os.Getenv("KRYPTIC_CLIENT_SECRET")
+	if clientId == "" || clientSecret == "" {
+		return fmt.Errorf("set KRYPTIC_CLIENT_ID and KRYPTIC_CLIENT_SECRET (from the management console)")
+	}
+
+	client := api.NewPipelinesClient()
+	tokens, err := client.MachineToken(clientId, clientSecret)
+	if err != nil {
+		return fmt.Errorf("credential exchange failed: %w", err)
+	}
+	keys, err := client.MachineKeysMe(tokens.AccessToken)
+	if err != nil {
+		return fmt.Errorf("fetching machine keys: %w", err)
+	}
+	unwrap := func(_, wrapped string) ([]byte, error) {
+		return unwrapMachineOrgKey(clientSecret, keys, wrapped)
+	}
+
+	var failed int
+	for _, id := range ids {
+		if err := dynsecret.RevokeLease(context.Background(), client, tokens.AccessToken, id, unwrap); err != nil {
+			fmt.Fprintf(os.Stderr, "revoke %s: %v\n", id, err)
+			failed++
+		}
+	}
+	if failed > 0 {
+		return fmt.Errorf("revoked %d of %d leases", len(ids)-failed, len(ids))
 	}
 	return nil
 }

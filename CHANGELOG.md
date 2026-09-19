@@ -5,7 +5,33 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+## 1.3.0 - 2026-09-19
+
 ### Fixed
+
+- The dashboard loopback (`127.0.0.1:5278`) no longer reflects arbitrary
+  origins on `/status`, so a random website cannot detect the daemon, its
+  version, or the signed-in state from a visitor's browser. The mint origin
+  allowlist pins `https://app.kryptic.dev` exactly (no `*.kryptic.dev`
+  wildcard, no plain http) alongside loopback hosts for development.
+  Self-hosted installs need no configuration: the daemon trusts the
+  dashboard implied by the Daemon BFF URL it signed into (the BFF host
+  itself, or its parent when the BFF sits on the kit's `daemon.` subdomain).
+  Unusual split-host layouts can still list the exact dashboard origin in
+  `KRYPTIC_DASHBOARD_ORIGINS`.
+- Connector TLS from Security Audit #04: Postgres connects with
+  `sslmode=verify-full` (was `require`, which never checked the server
+  certificate), Cassandra enables TLS with host verification when SSL is on
+  (it previously connected in cleartext), and MySQL honours the
+  verify-off toggle with `skip-verify`. A CA from the provider config is
+  used for Postgres and Cassandra verification. A CA write failure aborts
+  the connection instead of falling back to the system store, and the temp
+  PEM is removed after the driver finishes.
+- AWS IAM revocation deletes the inline `kryptic-lease` policy before
+  `DeleteUser`, which used to fail and leave the minted IAM user alive.
+- Lease passwords and usernames draw uniformly from the random alphabet
+  (no modulo bias) and the connector stops instead of falling back to a
+  predictable string if the OS entropy source fails.
 
 - `kryptic connector run` refreshes its access token after a 401 so a
   Daemon BFF restart or token expiry does not leave the poller unauthorized.
@@ -16,16 +42,24 @@ matching section into the GitHub Release.
 - Dashboard Generate lease talks to the local daemon on `127.0.0.1:5278`.
   If the daemon is down, the drawer refuses to create a lease. The daemon
   mints that row itself so it never sits on the org connector queue.
+- `kryptic connector run` posts `.../connectors/{id}/disconnect` on SIGINT
+  or SIGTERM so the platform audit and the dashboard online flag update
+  when the process stops, not after the heartbeat window.
+
+### Changed
+
+- The daemon, `kryptic ci export`, and the Kubernetes operator mint the
+  lease they requested. They no longer wait for an org-wide connector poll.
+  `kryptic ci revoke` drops those roles (`KRYPTIC_DYNAMIC_LEASES` or
+  `--lease`). `kryptic connector run` only reaps leftover revokes this
+  identity owns, every 60s.
 
 ### Added
 
 - Operations → Start "Dynamic-Secrets" Connector (menu bar, tray, and Open
-  Kryptic) opens a terminal running `kryptic connector run --name local` so
-  lease mint and revoke logs stay on screen.
-- `kryptic connector run` mints and revokes Enterprise dynamic secret leases
-  (Postgres, MySQL, Redis, Cassandra, Oracle, AWS IAM). The connector decrypts
-  provider config locally. `kryptic secrets` / `kryptic ci export` request a
-  lease for each dynamic key and inject `{KEY}_USERNAME` / `{KEY}_PASSWORD`.
+  Kryptic) opens a terminal running `kryptic connector run --name local`.
+- `kryptic ci revoke` and one-shot mint/revoke on the requester for
+  Postgres, MySQL, Redis, Cassandra, Oracle, and AWS IAM.
 
 ## 1.2.0 - 2026-09-13
 

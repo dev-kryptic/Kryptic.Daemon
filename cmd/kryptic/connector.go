@@ -18,14 +18,14 @@ import (
 
 func connector() error {
 	if len(os.Args) < 3 || os.Args[2] != "run" {
-		fmt.Println(`kryptic connector - mint and revoke dynamic secret leases
+		fmt.Println(`kryptic connector - reap leftover dynamic-secret revokes
 
   kryptic connector run [--name NAME]
 
-Uses the signed-in daemon session, or KRYPTIC_CLIENT_ID / KRYPTIC_CLIENT_SECRET
-against the Secrets API when those are set. The connector decrypts provider
-config locally, talks to Postgres / MySQL / Redis / Cassandra / Oracle / AWS,
-and uploads a minted envelope. The platform never sees a password.`)
+Optional. App, CI, and the dashboard mint on the process that asked for the
+lease. This loop only drops roles this identity created and then left behind
+(crash, missed ci revoke). Uses the signed-in daemon session, or
+KRYPTIC_CLIENT_ID / KRYPTIC_CLIENT_SECRET against the Secrets API.`)
 		return nil
 	}
 	return connectorRun()

@@ -10,6 +10,7 @@ package server
 
 import (
 	"bufio"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/dev-kryptic/Kryptic.Encryption.Go/envelope"
 	"github.com/dev-kryptic/Kryptic.Encryption.Go/sealedbox"
+	dyn "github.com/dev-kryptic/daemon/dynsecret"
 	"github.com/dev-kryptic/daemon/internal/api"
 	"github.com/dev-kryptic/daemon/internal/applog"
 	"github.com/dev-kryptic/daemon/internal/authstore"
@@ -51,6 +53,7 @@ type cacheEntry struct {
 	secrets   []secretPair
 	hints     []api.DynamicHint
 	orgKey    []byte
+	leaseIDs  []string
 	fetchedAt time.Time
 }
 
@@ -232,19 +235,60 @@ func (s *Server) handleSecrets(req request) map[string]any {
 		s.mu.Unlock()
 	}
 
-	if len(hints) > 0 {
-		leased, err := dynsecret.Fetch(s.client, token, req.ProjectId, req.Environment, hints, orgKey)
+	if len(hints) > 0 && !fresh {
+		leased, leaseIDs, err := s.dynamicPairs(token, req.ProjectId, req.Environment, hints, orgKey, entry.leaseIDs)
 		if err != nil {
 			return errorResponse("internal", err.Error())
 		}
 		for _, pair := range leased {
 			secrets = append(secrets, secretPair{Key: pair.Key, Value: pair.Value})
 		}
+		s.mu.Lock()
+		cached := s.cache[cacheKey]
+		cached.secrets = secrets
+		cached.leaseIDs = leaseIDs
+		s.cache[cacheKey] = cached
+		s.mu.Unlock()
 	}
 
 	log.Printf("served %d secrets for %s/%s (decrypted locally)", len(secrets), req.ProjectId, req.Environment)
 	applog.Event("daemon", "bundle.ok", fmt.Sprintf("count=%d", len(secrets)))
 	return map[string]any{"ok": true, "secrets": secrets}
+}
+
+func (s *Server) dynamicPairs(token, projectId, environment string, hints []api.DynamicHint, orgKey []byte, existing []string) ([]dynsecret.Pair, []string, error) {
+	if pairs, ok := reuseLeasePairs(s.client, token, orgKey, existing); ok {
+		return pairs, existing, nil
+	}
+	result, err := dynsecret.Fetch(context.Background(), s.client, token, projectId, environment, hints, unwrapDeviceOrgKey, orgKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	return result.Pairs, result.LeaseIDs, nil
+}
+
+func reuseLeasePairs(client *api.Client, token string, orgKey []byte, leaseIDs []string) ([]dynsecret.Pair, bool) {
+	if len(leaseIDs) == 0 {
+		return nil, false
+	}
+	var pairs []dynsecret.Pair
+	for _, id := range leaseIDs {
+		env, err := client.DynamicLeaseEnvelope(token, id)
+		if err != nil {
+			return nil, false
+		}
+		associated := envelope.SecretContext(env.DefinitionId, env.EnvironmentId)
+		plaintext, err := envelope.Open(orgKey, env.Envelope, associated)
+		if err != nil {
+			return nil, false
+		}
+		var minted dyn.Minted
+		if err := json.Unmarshal(plaintext, &minted); err != nil {
+			return nil, false
+		}
+		pairs = append(pairs, dynsecret.Expand(env.Key, minted)...)
+	}
+	return pairs, true
 }
 
 // decryptBundle unwraps the org key with this device's private key and opens
