@@ -5,27 +5,19 @@ package api
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"time"
 
-	"github.com/dev-kryptic/Kryptic.Encryption.Go/kdf"
-	"github.com/dev-kryptic/daemon/dynsecret"
 	"github.com/dev-kryptic/daemon/internal/applog"
 	"github.com/dev-kryptic/daemon/internal/authstore"
 	"github.com/dev-kryptic/daemon/internal/config"
 )
 
-// DefaultBaseURL points at the hosted Daemon BFF. Resolution order is
-// KRYPTIC_API, then the saved config file, then this default.
 const DefaultBaseURL = config.DefaultAPI
-
-// DefaultPipelinesBaseURL points at the hosted Pipelines BFF (CI/CD);
-// KRYPTIC_PIPELINES_API overrides it.
 const DefaultPipelinesBaseURL = "https://pipelines.kryptic.dev"
+const DefaultSecretsBaseURL = "https://secrets.kryptic.dev"
 
 type Client struct {
 	BaseURL     string
@@ -39,7 +31,6 @@ func NewClient() *Client {
 	return NewClientFor(authstore.ResolvedAPI())
 }
 
-// NewClientFor points at an explicit Daemon BFF, ignoring config and env.
 func NewClientFor(baseURL string) *Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.IdleConnTimeout = 30 * time.Second
@@ -54,9 +45,6 @@ func NewClientFor(baseURL string) *Client {
 	}
 }
 
-const DefaultSecretsBaseURL = "https://secrets.kryptic.dev"
-
-// NewSecretsAPIClient talks to the public Secrets API (machine tokens, /v1).
 func NewSecretsAPIClient() *Client {
 	base := os.Getenv("KRYPTIC_SECRETS_API")
 	if base == "" {
@@ -69,8 +57,6 @@ func NewSecretsAPIClient() *Client {
 	return client
 }
 
-// NewPipelinesClient targets the Pipelines BFF, which speaks machine tokens
-// (client credentials) instead of the daemon's user device flow.
 func NewPipelinesClient() *Client {
 	base := os.Getenv("KRYPTIC_PIPELINES_API")
 	if base == "" {
@@ -80,299 +66,6 @@ func NewPipelinesClient() *Client {
 	client.HTTP.Timeout = 15 * time.Second
 	return client
 }
-
-type DeviceStart struct {
-	DeviceCode          string `json:"deviceCode"`
-	UserCode            string `json:"userCode"`
-	VerificationUrl     string `json:"verificationUrl"`
-	ExpiresInSeconds    int    `json:"expiresInSeconds"`
-	PollIntervalSeconds int    `json:"pollIntervalSeconds"`
-	Challenge           string `json:"challenge"`
-}
-
-type Tokens struct {
-	AccessToken      string `json:"accessToken"`
-	RefreshToken     string `json:"refreshToken"`
-	ExpiresInSeconds int    `json:"expiresInSeconds"`
-}
-
-type Me struct {
-	Email        string `json:"email"`
-	DisplayName  string `json:"displayName"`
-	Organization string `json:"organization"`
-	// Pointer so an older BFF that omits the field is not treated as "no grant".
-	HasOrgKeyGrant *bool `json:"hasOrgKeyGrant"`
-}
-
-// BundleEntry is one ciphertext envelope. The daemon decrypts it locally with
-// the org key; the definition/environment ids rebuild the associated data.
-type BundleEntry struct {
-	Key           string `json:"key"`
-	Envelope      string `json:"envelope"`
-	DefinitionId  string `json:"definitionId"`
-	EnvironmentId string `json:"environmentId"`
-}
-
-// Bundle is the end-to-end encrypted response: envelopes plus the org key
-// sealed to this device's public key. The server cannot open any of it.
-type Bundle struct {
-	ProjectPublicId string         `json:"projectPublicId"`
-	Environment     string         `json:"environment"`
-	OrgKeyId        string         `json:"orgKeyId"`
-	WrappedOrgKey   string         `json:"wrappedOrgKey"`
-	Secrets         []BundleEntry  `json:"secrets"`
-	DynamicSecrets  []DynamicHint  `json:"dynamicSecrets"`
-}
-
-type DynamicHint struct {
-	Key           string `json:"key"`
-	DefinitionId  string `json:"definitionId"`
-	EnvironmentId string `json:"environmentId"`
-	Provider      int    `json:"provider"`
-}
-
-type DynamicLease struct {
-	Id                string  `json:"id"`
-	EnvironmentId     string  `json:"environmentId"`
-	Status            int     `json:"status"`
-	RequestedAction   int     `json:"requestedAction"`
-	RequestedByName   string  `json:"requestedByName"`
-	ExpiresAt         string  `json:"expiresAt"`
-	CompletedAt       string  `json:"completedAt"`
-	EntityId          string  `json:"entityId"`
-	Error             string  `json:"error"`
-	HasMintedEnvelope bool    `json:"hasMintedEnvelope"`
-}
-
-type DynamicWorkBatch struct {
-	OrgKeyId      string         `json:"orgKeyId"`
-	WrappedOrgKey string         `json:"wrappedOrgKey"`
-	Items         []dynsecret.WorkItem `json:"items"`
-}
-
-type CompleteDynamicLease struct {
-	LeaseId        string  `json:"leaseId"`
-	Ok             bool    `json:"ok"`
-	Error          string  `json:"error,omitempty"`
-	EntityId       string  `json:"entityId,omitempty"`
-	MintedEnvelope string  `json:"mintedEnvelope,omitempty"`
-	ExpiresAt      *string `json:"expiresAt,omitempty"`
-}
-
-type DynamicConnector struct {
-	Id         string `json:"id"`
-	Name       string `json:"name"`
-	LastSeenAt string `json:"lastSeenAt"`
-	Online     bool   `json:"online"`
-}
-
-type SecretEnvelope struct {
-	Key           string `json:"key"`
-	DefinitionId  string `json:"definitionId"`
-	EnvironmentId string `json:"environmentId"`
-	Envelope      string `json:"envelope"`
-	Version       int    `json:"version"`
-}
-
-type Project struct {
-	PublicId     string   `json:"publicId"`
-	Name         string   `json:"name"`
-	Environments []string `json:"environments"`
-}
-
-// APIError carries the HTTP status so callers can distinguish auth problems
-// (revoked session) from access problems (no grant for the project). Code is
-// the protocol error name when the BFF returns a structured body
-// ({"error":"unknown_environment","message":"..."}).
-type APIError struct {
-	Status  int
-	Code    string
-	Message string
-}
-
-func (e *APIError) Error() string {
-	return fmt.Sprintf("%d: %s", e.Status, e.Message)
-}
-
-// DeviceStart begins the device flow. devicePublicKey is the device's
-// sealed-box public key (base64url 65-byte SEC1 point); the approving admin
-// seals the org key to it so this device can decrypt bundles.
-func (c *Client) DeviceStart(deviceName, platform, version, devicePublicKey string) (*DeviceStart, error) {
-	var out DeviceStart
-	err := c.post("/api/auth/device/start", "", map[string]string{
-		"deviceName": deviceName, "platform": platform, "daemonVersion": version,
-		"devicePublicKey": devicePublicKey,
-	}, &out)
-	return &out, err
-}
-
-// DevicePoll returns (nil, nil) while the approval is still pending.
-func (c *Client) DevicePoll(deviceCode, challengeSignature string) (*Tokens, error) {
-	payload := map[string]string{"deviceCode": deviceCode}
-	if challengeSignature != "" {
-		payload["challengeSignature"] = challengeSignature
-	}
-	body, _ := json.Marshal(payload)
-	response, err := c.HTTP.Post(c.BaseURL+"/api/auth/device/poll", "application/json", bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode == http.StatusAccepted {
-		return nil, nil // pending
-	}
-	if response.StatusCode != http.StatusOK {
-		return nil, readError(response)
-	}
-	var tokens Tokens
-	return &tokens, json.NewDecoder(response.Body).Decode(&tokens)
-}
-
-func (c *Client) Refresh(refreshToken string) (*Tokens, error) {
-	var out Tokens
-	err := c.post("/api/auth/refresh", "", map[string]string{"refreshToken": refreshToken}, &out)
-	return &out, err
-}
-
-func (c *Client) Logout(accessToken string) error {
-	return c.post("/api/auth/logout", accessToken, map[string]string{}, nil)
-}
-
-func (c *Client) RevokeDevice(accessToken string) error {
-	return c.post("/api/auth/device/revoke", accessToken, map[string]string{}, nil)
-}
-
-func (c *Client) Me(accessToken string) (*Me, error) {
-	var out Me
-	err := c.get("/api/auth/me", accessToken, &out)
-	return &out, err
-}
-
-func (c *Client) Bundle(accessToken, projectPublicId, environment string) (*Bundle, error) {
-	var out Bundle
-	query := url.Values{"projectPublicId": {projectPublicId}, "environment": {environment}}
-	err := c.get("/api/secrets/bundle?"+query.Encode(), accessToken, &out)
-	return &out, err
-}
-
-func (c *Client) Projects(accessToken string) ([]Project, error) {
-	var out []Project
-	err := c.get("/api/secrets/projects", accessToken, &out)
-	return out, err
-}
-
-// ---------- machine (CI) endpoints, Pipelines BFF ----------
-
-// MachineKeys is the machine's own key record: the private key arrives wrapped
-// by an Argon2id key derived from the client secret, so only a caller holding
-// the secret can use it.
-type MachineKeys struct {
-	PublicKey            string `json:"publicKey"`
-	WrappedPrivateKey    string `json:"wrappedPrivateKey"`
-	KdfSalt              string `json:"kdfSalt"`
-	KdfParametersVersion int    `json:"kdfParametersVersion"`
-}
-
-// MachineToken exchanges client credentials for a short-lived machine token.
-// v2 secrets ("ksm2_" prefix) are never sent raw: the wire carries the
-// domain-separated auth derivation, so the server never sees the value that
-// unwraps the machine private key. Legacy secrets pass through unchanged.
-func (c *Client) MachineToken(clientId, clientSecret string) (*Tokens, error) {
-	authSecret, err := kdf.MachineAuthSecret(clientSecret)
-	if err != nil {
-		return nil, err
-	}
-	path := c.TokenPath
-	if path == "" {
-		path = "/api/token"
-	}
-	var out Tokens
-	err = c.post(path, "", map[string]string{
-		"clientId": clientId, "clientSecret": authSecret,
-	}, &out)
-	return &out, err
-}
-
-// MachineKeysMe fetches the machine's key record.
-func (c *Client) MachineKeysMe(accessToken string) (*MachineKeys, error) {
-	var out MachineKeys
-	path := c.KeysPath
-	if path == "" {
-		path = "/api/keys/me"
-	}
-	err := c.get(path, accessToken, &out)
-	return &out, err
-}
-
-func (c *Client) dynamicPath() string {
-	if c.DynamicPath != "" {
-		return c.DynamicPath
-	}
-	return "/api/dynamic-secrets"
-}
-
-func (c *Client) RequestDynamicLease(accessToken, projectPublicId, environment, key, ttl string) (*DynamicLease, error) {
-	query := url.Values{"projectPublicId": {projectPublicId}, "environment": {environment}, "key": {key}}
-	if ttl != "" {
-		query.Set("ttl", ttl)
-	}
-	var out DynamicLease
-	err := c.post(c.dynamicPath()+"/leases?"+query.Encode(), accessToken, map[string]string{}, &out)
-	return &out, err
-}
-
-func (c *Client) GetDynamicLease(accessToken, leaseId string) (*DynamicLease, error) {
-	var out DynamicLease
-	err := c.get(c.dynamicPath()+"/leases/"+leaseId, accessToken, &out)
-	return &out, err
-}
-
-func (c *Client) DynamicLeaseEnvelope(accessToken, leaseId string) (*SecretEnvelope, error) {
-	var out SecretEnvelope
-	err := c.get(c.dynamicPath()+"/leases/"+leaseId+"/envelope", accessToken, &out)
-	return &out, err
-}
-
-func (c *Client) RegisterDynamicConnector(accessToken, name string) (*DynamicConnector, error) {
-	var out DynamicConnector
-	err := c.post(c.dynamicPath()+"/connectors", accessToken, map[string]string{"name": name}, &out)
-	return &out, err
-}
-
-func (c *Client) DynamicConnectorHeartbeat(accessToken, connectorId string) error {
-	return c.post(c.dynamicPath()+"/connectors/"+connectorId+"/heartbeat", accessToken, map[string]string{}, nil)
-}
-
-func (c *Client) DynamicConnectorDisconnect(accessToken, connectorId string) error {
-	return c.post(c.dynamicPath()+"/connectors/"+connectorId+"/disconnect", accessToken, map[string]string{}, nil)
-}
-
-func (c *Client) DynamicWork(accessToken string) (*DynamicWorkBatch, error) {
-	var out DynamicWorkBatch
-	err := c.get(c.dynamicPath()+"/work", accessToken, &out)
-	return &out, err
-}
-
-func (c *Client) DynamicLeaseWork(accessToken, leaseId string) (*DynamicWorkBatch, error) {
-	var out DynamicWorkBatch
-	err := c.get(c.dynamicPath()+"/leases/"+leaseId+"/work", accessToken, &out)
-	return &out, err
-}
-
-func (c *Client) RevokeDynamicLease(accessToken, leaseId string) (*DynamicLease, error) {
-	var out DynamicLease
-	err := c.post(c.dynamicPath()+"/leases/"+leaseId+"/revoke", accessToken, map[string]string{}, &out)
-	return &out, err
-}
-
-func (c *Client) CompleteDynamicWork(accessToken string, body CompleteDynamicLease) (*DynamicLease, error) {
-	var out DynamicLease
-	err := c.post(c.dynamicPath()+"/work/complete", accessToken, body, &out)
-	return &out, err
-}
-
-// ---------- plumbing ----------
 
 func (c *Client) post(path, accessToken string, payload any, out any) error {
 	body, _ := json.Marshal(payload)
@@ -408,28 +101,4 @@ func (c *Client) do(request *http.Request, out any) error {
 		return nil
 	}
 	return json.NewDecoder(response.Body).Decode(out)
-}
-
-func readError(response *http.Response) error {
-	var buffer bytes.Buffer
-	_, _ = buffer.ReadFrom(response.Body)
-	message := buffer.String()
-
-	// The API returns a bare string or an { error, message } object.
-	var wrapped struct {
-		Error   string `json:"error"`
-		Message string `json:"message"`
-	}
-	if json.Unmarshal(buffer.Bytes(), &wrapped) == nil && (wrapped.Message != "" || wrapped.Error != "") {
-		if wrapped.Message != "" {
-			message = wrapped.Message
-		}
-		return &APIError{Status: response.StatusCode, Code: wrapped.Error, Message: message}
-	}
-	var bare string
-	if json.Unmarshal(buffer.Bytes(), &bare) == nil && bare != "" {
-		message = bare
-	}
-
-	return &APIError{Status: response.StatusCode, Message: message}
 }

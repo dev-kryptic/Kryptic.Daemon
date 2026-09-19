@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"log"
 	"net"
@@ -12,10 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dev-kryptic/Kryptic.Encryption.Go/sealedbox"
 	"github.com/dev-kryptic/daemon/internal/applog"
-	"github.com/dev-kryptic/daemon/internal/authstore"
 	"github.com/dev-kryptic/daemon/internal/dynsecret"
+	"github.com/dev-kryptic/daemon/internal/orgkey"
 )
 
 // BrowserPort is the loopback HTTP port the dashboard probes before Generate lease.
@@ -54,10 +52,10 @@ func (s *Server) handleBrowserStatus(w http.ResponseWriter, r *http.Request) {
 	authenticated, _ := status["authenticated"].(bool)
 	orgKeyGranted, _ := status["orgKeyGranted"].(bool)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":             true,
-		"authenticated":  authenticated,
-		"orgKeyGranted":  orgKeyGranted,
-		"daemonVersion":  Version,
+		"ok":            true,
+		"authenticated": authenticated,
+		"orgKeyGranted": orgKeyGranted,
+		"daemonVersion": Version,
 	})
 }
 
@@ -96,32 +94,11 @@ func (s *Server) handleBrowserLease(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
-	if err := dynsecret.MintLease(ctx, s.client, token, leaseId, unwrapDeviceOrgKey); err != nil {
+	if err := dynsecret.MintLease(ctx, s.client, token, leaseId, orgkey.Device); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "leaseId": leaseId})
-}
-
-func unwrapDeviceOrgKey(_, wrapped string) ([]byte, error) {
-	session, err := authstore.LoadSession()
-	if err != nil {
-		return nil, err
-	}
-	enc := base64.RawURLEncoding
-	private, err := enc.DecodeString(session.DevicePrivateKey)
-	if err != nil {
-		return nil, err
-	}
-	public, err := enc.DecodeString(session.DevicePublicKey)
-	if err != nil {
-		return nil, err
-	}
-	sealed, err := sealedbox.Parse(wrapped)
-	if err != nil {
-		return nil, err
-	}
-	return sealedbox.Open(sealedbox.KeyPair{Public: public, Private: private}, sealed)
 }
 
 // writeBrowserCORS reflects the Origin only when it is on the dashboard

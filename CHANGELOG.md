@@ -5,6 +5,12 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+### Changed
+
+- Reorganized the daemon internals: org-key unwrap and dotenv export are shared
+  packages, the CLI and socket server are split by command, and dynamic-secret
+  providers live under `internal/dynsecret/provider`.
+
 ## 1.3.0 - 2026-09-19
 
 ### Fixed
