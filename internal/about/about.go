@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	WindowTitle       = "About Kryptic"
-	AppName           = "Kryptic"
-	Tagline           = "Zero-friction secrets management"
+	WindowTitle  = "About Kryptic"
+	AppName      = "Kryptic"
+	Tagline      = "Zero-friction secrets management"
 	Blurb        = "Authenticate once. Every project on this machine works. No prefix commands, no .env files."
 	WebsiteLabel = "kryptic.dev"
 	WebsiteURL   = "https://kryptic.dev"

@@ -25,20 +25,20 @@ const (
 	scrollGutter = 18
 	scrollStep   = 48
 
-	idAccount = 101
-	idAdd     = 102
-	idFlush   = 103
-	idScan    = 104
-	idUpdate  = 105
-	idServer  = 106
-	idGitHub  = 107
-	idDocs    = 108
-	idLogs    = 109
-	idAbout   = 110
+	idAccount   = 101
+	idAdd       = 102
+	idFlush     = 103
+	idScan      = 104
+	idUpdate    = 105
+	idServer    = 106
+	idGitHub    = 107
+	idDocs      = 108
+	idLogs      = 109
+	idAbout     = 110
 	idQuit      = 111
 	idConnector = 112
 	idProfile   = 200
-	idDelete  = 300
+	idDelete    = 300
 )
 
 // Status-dot colors as COLORREF (0x00BBGGRR), same as the tray dot.
@@ -59,38 +59,38 @@ type form struct {
 	buttonFnt  windows.Handle
 	logoBMP    windows.Handle
 
-	logoHWND    windows.Handle
-	titleHWND   windows.Handle
-	versionHWND windows.Handle
-	dotHWND     windows.Handle
-	statusHWND  windows.Handle
-	emailHWND   windows.Handle
-	orgHWND     windows.Handle
-	apiHWND     windows.Handle
-	bannerHWND  windows.Handle
-	accountLine windows.Handle
-	accountSec  windows.Handle
-	accountHWND windows.Handle
-	addHWND     windows.Handle
-	opsLine     windows.Handle
-	opsSec      windows.Handle
+	logoHWND      windows.Handle
+	titleHWND     windows.Handle
+	versionHWND   windows.Handle
+	dotHWND       windows.Handle
+	statusHWND    windows.Handle
+	emailHWND     windows.Handle
+	orgHWND       windows.Handle
+	apiHWND       windows.Handle
+	bannerHWND    windows.Handle
+	accountLine   windows.Handle
+	accountSec    windows.Handle
+	accountHWND   windows.Handle
+	addHWND       windows.Handle
+	opsLine       windows.Handle
+	opsSec        windows.Handle
 	flushHWND     windows.Handle
 	connectorHWND windows.Handle
 	scanHWND      windows.Handle
-	setLine     windows.Handle
-	setSec      windows.Handle
-	updateHWND  windows.Handle
-	serverHWND  windows.Handle
-	helpLine    windows.Handle
-	helpSec     windows.Handle
-	githubHWND  windows.Handle
-	docsHWND    windows.Handle
-	logsHWND    windows.Handle
-	aboutHWND   windows.Handle
-	quitHWND    windows.Handle
-	profiles    [maxProfiles]windows.Handle
-	deletes     [maxProfiles]windows.Handle
-	profileIDs  [maxProfiles]string
+	setLine       windows.Handle
+	setSec        windows.Handle
+	updateHWND    windows.Handle
+	serverHWND    windows.Handle
+	helpLine      windows.Handle
+	helpSec       windows.Handle
+	githubHWND    windows.Handle
+	docsHWND      windows.Handle
+	logsHWND      windows.Handle
+	aboutHWND     windows.Handle
+	quitHWND      windows.Handle
+	profiles      [maxProfiles]windows.Handle
+	deletes       [maxProfiles]windows.Handle
+	profileIDs    [maxProfiles]string
 
 	connKind string
 	scrollY  int32
