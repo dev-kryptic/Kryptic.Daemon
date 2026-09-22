@@ -8,19 +8,19 @@ import (
 )
 
 type panelState struct {
-	mu              sync.Mutex
 	connection      string
 	email           string
 	organization    string
 	api             string
-	authenticated   bool
-	running         bool
-	loginInProgress bool
 	loginCode       string
 	loginError      string
 	updateTitle     string
-	scanInProgress  bool
 	profiles        []manageui.Profile
+	mu              sync.Mutex
+	authenticated   bool
+	running         bool
+	loginInProgress bool
+	scanInProgress  bool
 }
 
 func (p *panelState) snapshot() manageui.Snapshot {

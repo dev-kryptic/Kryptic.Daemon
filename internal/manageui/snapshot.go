@@ -9,16 +9,16 @@ type Snapshot struct {
 	Email           string
 	Organization    string
 	API             string
+	LoginCode       string
+	LoginError      string
+	UpdateTitle     string
+	Version         string
+	Profiles        []Profile
 	Authenticated   bool
 	Running         bool
 	CanLogin        bool
 	LoginInProgress bool
-	LoginCode       string
-	LoginError      string
-	UpdateTitle     string
 	ScanInProgress  bool
-	Profiles        []Profile
-	Version         string
 }
 
 type Profile struct {

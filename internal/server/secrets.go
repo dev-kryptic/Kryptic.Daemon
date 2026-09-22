@@ -3,8 +3,8 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,7 +16,7 @@ import (
 	"github.com/dev-kryptic/daemon/internal/orgkey"
 )
 
-func (s *Server) handleSecrets(req request) map[string]any {
+func (s *Server) handleSecrets(req request) any {
 	cacheKey := req.ProjectId + "/" + req.Environment
 
 	s.mu.Lock()
@@ -27,7 +27,7 @@ func (s *Server) handleSecrets(req request) map[string]any {
 	token, err := s.token()
 	if err != nil {
 		applog.Error("daemon", "bundle.auth", err)
-		return errorResponse("not_authenticated", "run `kryptic login` first")
+		return fail("not_authenticated", "run `kryptic login` first")
 	}
 
 	var secrets []orgkey.Pair
@@ -40,12 +40,11 @@ func (s *Server) handleSecrets(req request) map[string]any {
 	} else {
 		bundle, err := s.client.Bundle(token, req.ProjectId, req.Environment)
 		if err != nil {
-			var apiError *api.APIError
-			if ok := asAPIError(err, &apiError); ok {
-				applog.Error("daemon", "bundle.fetch", err, fmt.Sprintf("status=%d", apiError.Status))
+			if apiError, ok := asAPIError(err); ok {
+				applog.Error("daemon", "bundle.fetch", err, "status="+strconv.Itoa(apiError.Status))
 				switch apiError.Status {
 				case 401:
-					return errorResponse("not_authenticated", "session revoked - run `kryptic login`")
+					return fail("not_authenticated", "session revoked - run `kryptic login`")
 				case 403:
 					message := "you have no access to this environment"
 					if apiError.Message != "" {
@@ -56,15 +55,15 @@ func (s *Server) handleSecrets(req request) map[string]any {
 					} else {
 						notifyProjectDenied(req.ProjectId, req.Environment, message)
 					}
-					return errorResponse("access_denied", message)
+					return fail("access_denied", message)
 				case 404:
 					if isUnknownEnvironment(apiError) {
-						return errorResponse("unknown_environment", apiError.Message)
+						return fail("unknown_environment", apiError.Message)
 					}
-					return errorResponse("unknown_project", apiError.Message)
+					return fail("unknown_project", apiError.Message)
 				}
 			}
-			return errorResponse("internal", err.Error())
+			return fail("internal", err.Error())
 		}
 
 		decrypted, key, err := orgkey.OpenDeviceBundle(bundle)
@@ -73,9 +72,9 @@ func (s *Server) handleSecrets(req request) map[string]any {
 			applog.Event("daemon", "bundle.decrypt", "result=error")
 			if isGrantFailure(err) {
 				notifyMissingOrgKey()
-				return errorResponse("access_denied", err.Error())
+				return fail("access_denied", err.Error())
 			}
-			return errorResponse("internal", err.Error())
+			return fail("internal", err.Error())
 		}
 		secrets = decrypted
 		hints = bundle.DynamicSecrets
@@ -88,7 +87,7 @@ func (s *Server) handleSecrets(req request) map[string]any {
 	if len(hints) > 0 && !fresh {
 		leased, leaseIDs, err := s.dynamicPairs(token, req.ProjectId, req.Environment, hints, orgKey, entry.leaseIDs)
 		if err != nil {
-			return errorResponse("internal", err.Error())
+			return fail("internal", err.Error())
 		}
 		for _, pair := range leased {
 			secrets = append(secrets, orgkey.Pair{Key: pair.Key, Value: pair.Value})
@@ -102,8 +101,8 @@ func (s *Server) handleSecrets(req request) map[string]any {
 	}
 
 	log.Printf("served %d secrets for %s/%s (decrypted locally)", len(secrets), req.ProjectId, req.Environment)
-	applog.Event("daemon", "bundle.ok", fmt.Sprintf("count=%d", len(secrets)))
-	return map[string]any{"ok": true, "secrets": secrets}
+	applog.Event("daemon", "bundle.ok", "count="+strconv.Itoa(len(secrets)))
+	return secretsReply{V: protocolVersion, OK: true, Secrets: secrets}
 }
 
 func (s *Server) dynamicPairs(token, projectId, environment string, hints []api.DynamicHint, orgKey []byte, existing []string) ([]dynsecret.Pair, []string, error) {
@@ -156,10 +155,7 @@ func isGrantFailure(err error) bool {
 		strings.Contains(msg, "device key is corrupt")
 }
 
-func asAPIError(err error, target **api.APIError) bool {
+func asAPIError(err error) (*api.APIError, bool) {
 	e, ok := err.(*api.APIError)
-	if ok {
-		*target = e
-	}
-	return ok
+	return e, ok
 }

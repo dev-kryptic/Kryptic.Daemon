@@ -105,11 +105,11 @@ func (s *Server) handle(connection net.Conn) {
 
 	var req request
 	if json.Unmarshal(line, &req) != nil {
-		s.reply(connection, errorResponse("internal", "invalid request"))
+		s.reply(connection, fail("internal", "invalid request"))
 		return
 	}
 	if req.V != protocolVersion {
-		s.reply(connection, errorResponse("unsupported_version", "this daemon speaks protocol v1"))
+		s.reply(connection, fail("unsupported_version", "this daemon speaks protocol v1"))
 		return
 	}
 
@@ -131,16 +131,6 @@ func (s *Server) handle(connection net.Conn) {
 	case "delete-profile":
 		s.reply(connection, s.handleDeleteProfile(req))
 	default:
-		s.reply(connection, errorResponse("internal", "unknown request type"))
+		s.reply(connection, fail("internal", "unknown request type"))
 	}
-}
-
-func (s *Server) reply(connection net.Conn, payload map[string]any) {
-	payload["v"] = protocolVersion
-	data, _ := json.Marshal(payload)
-	_, _ = connection.Write(append(data, '\n'))
-}
-
-func errorResponse(code, message string) map[string]any {
-	return map[string]any{"ok": false, "error": code, "message": message}
 }

@@ -9,13 +9,17 @@ import (
 	"github.com/dev-kryptic/daemon/internal/authstore"
 )
 
-func (s *Server) handleStatus() map[string]any {
-	base := map[string]any{
-		"ok": true, "authenticated": false, "daemonVersion": Version,
-		"apiUrl": s.client.BaseURL, "orgKeyGranted": true,
-		"connection": "signed_out",
+func (s *Server) handleStatus() statusReply {
+	base := statusReply{
+		V:             protocolVersion,
+		OK:            true,
+		DaemonVersion: Version,
+		APIUrl:        s.client.BaseURL,
+		OrgKeyGranted: true,
+		Connection:    "signed_out",
+		Profiles:      []profileInfo{},
 	}
-	attachProfiles(base)
+	attachProfiles(&base)
 
 	token, err := s.token()
 	if err != nil {
@@ -45,7 +49,7 @@ func (s *Server) handleStatus() map[string]any {
 	return statusFromMe(base, me)
 }
 
-func (s *Server) statusFromFailure(base map[string]any, hasSession bool, err error) map[string]any {
+func (s *Server) statusFromFailure(base statusReply, hasSession bool, err error) statusReply {
 	if !sessionReadsAsSignedIn(hasSession, err) {
 		s.logStatusThrottled("status.unauthenticated", err)
 		s.mu.Lock()
@@ -58,8 +62,8 @@ func (s *Server) statusFromFailure(base map[string]any, hasSession bool, err err
 	s.mu.Lock()
 	me := s.lastMe
 	s.mu.Unlock()
-	base["authenticated"] = true
-	base["connection"] = "connected"
+	base.Authenticated = true
+	base.Connection = "connected"
 	if me != nil {
 		return statusFromMe(base, me)
 	}
@@ -78,46 +82,43 @@ func (s *Server) logStatusThrottled(event string, err error) {
 	}
 }
 
-func statusFromMe(base map[string]any, me *api.Me) map[string]any {
+func statusFromMe(base statusReply, me *api.Me) statusReply {
 	orgKeyGranted := true
 	if me.HasOrgKeyGrant != nil {
 		orgKeyGranted = *me.HasOrgKeyGrant
 	}
 
-	base["authenticated"] = true
-	base["email"] = me.Email
-	base["organization"] = me.Organization
-	base["orgKeyGranted"] = orgKeyGranted
+	base.Authenticated = true
+	base.Email = me.Email
+	base.Organization = me.Organization
+	base.OrgKeyGranted = orgKeyGranted
 	if !orgKeyGranted {
-		base["connection"] = "awaiting_approval"
+		base.Connection = "awaiting_approval"
 		notifyMissingOrgKey()
 	} else {
-		base["connection"] = "connected"
+		base.Connection = "connected"
 	}
 	return base
 }
 
-func attachProfiles(base map[string]any) {
+func attachProfiles(base *statusReply) {
 	store, err := authstore.LoadStore()
 	if err != nil {
-		base["profiles"] = []map[string]any{}
 		return
 	}
-	list := make([]map[string]any, 0, len(store.Profiles))
+	list := make([]profileInfo, 0, len(store.Profiles))
 	for _, p := range store.Profiles {
-		list = append(list, map[string]any{
-			"id":           p.ID,
-			"email":        p.Email,
-			"organization": p.Organization,
-			"api":          p.API(),
-			"active":       p.ID == store.ActiveID,
-			"signedIn":     p.SignedIn(),
+		list = append(list, profileInfo{
+			ID:           p.ID,
+			Email:        p.Email,
+			Organization: p.Organization,
+			API:          p.API(),
+			Active:       p.ID == store.ActiveID,
+			SignedIn:     p.SignedIn(),
 		})
 	}
-	base["profiles"] = list
-	if store.ActiveID != "" {
-		base["activeProfileId"] = store.ActiveID
-	}
+	base.Profiles = list
+	base.ActiveProfileId = store.ActiveID
 }
 
 func (s *Server) pollOrgKeyGrant() {

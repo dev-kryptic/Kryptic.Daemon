@@ -2,8 +2,8 @@ package server
 
 import (
 	"errors"
-	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,34 +22,34 @@ func (s *Server) ResetAuth() {
 	s.cache = map[string]cacheEntry{}
 }
 
-func (s *Server) handleResetAuth() map[string]any {
+func (s *Server) handleResetAuth() okReply {
 	s.ResetAuth()
 	log.Printf("signed out - dropped the access token and secrets cache")
 	applog.Event("daemon", "auth.reset")
-	return map[string]any{"ok": true}
+	return okReply{V: protocolVersion, OK: true}
 }
 
-func (s *Server) handleFlush() map[string]any {
+func (s *Server) handleFlush() flushReply {
 	s.mu.Lock()
 	cleared := len(s.cache)
 	s.cache = map[string]cacheEntry{}
 	s.mu.Unlock()
 
 	log.Printf("secrets cache flushed (%d bundle(s) dropped)", cleared)
-	applog.Event("daemon", "cache.flush", fmt.Sprintf("cleared=%d", cleared))
-	return map[string]any{"ok": true, "cleared": cleared}
+	applog.Event("daemon", "cache.flush", "cleared="+strconv.Itoa(cleared))
+	return flushReply{V: protocolVersion, OK: true, Cleared: cleared}
 }
 
-func (s *Server) handleSwitchProfile(req request) map[string]any {
+func (s *Server) handleSwitchProfile(req request) any {
 	id := strings.TrimSpace(req.ProfileId)
 	if id == "" {
-		return errorResponse("internal", "profileId is required")
+		return fail("internal", "profileId is required")
 	}
 	if err := authstore.Switch(id); err != nil {
 		if errors.Is(err, authstore.ErrUnknownProfile) {
-			return errorResponse("internal", "unknown profile")
+			return fail("internal", "unknown profile")
 		}
-		return errorResponse("internal", err.Error())
+		return fail("internal", err.Error())
 	}
 	s.ResetAuth()
 	s.applyActiveAPI()
@@ -57,13 +57,13 @@ func (s *Server) handleSwitchProfile(req request) map[string]any {
 	return s.handleStatus()
 }
 
-func (s *Server) handleSetAPI(req request) map[string]any {
+func (s *Server) handleSetAPI(req request) any {
 	raw := strings.TrimSpace(req.API)
 	if raw == "" {
 		raw = config.DefaultAPI
 	}
 	if err := authstore.SetActiveAPI(raw); err != nil {
-		return errorResponse("internal", err.Error())
+		return fail("internal", err.Error())
 	}
 	s.ResetAuth()
 	s.applyActiveAPI()
@@ -71,16 +71,16 @@ func (s *Server) handleSetAPI(req request) map[string]any {
 	return s.handleStatus()
 }
 
-func (s *Server) handleDeleteProfile(req request) map[string]any {
+func (s *Server) handleDeleteProfile(req request) any {
 	id := strings.TrimSpace(req.ProfileId)
 	if id == "" {
-		return errorResponse("internal", "profileId is required")
+		return fail("internal", "profileId is required")
 	}
 	if err := loginRemoveProfile(id); err != nil {
 		if errors.Is(err, authstore.ErrUnknownProfile) {
-			return errorResponse("internal", "unknown profile")
+			return fail("internal", "unknown profile")
 		}
-		return errorResponse("internal", err.Error())
+		return fail("internal", err.Error())
 	}
 	s.ResetAuth()
 	s.applyActiveAPI()

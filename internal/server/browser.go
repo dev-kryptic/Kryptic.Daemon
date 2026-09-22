@@ -49,13 +49,16 @@ func (s *Server) handleBrowserStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := s.handleStatus()
-	authenticated, _ := status["authenticated"].(bool)
-	orgKeyGranted, _ := status["orgKeyGranted"].(bool)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":            true,
-		"authenticated": authenticated,
-		"orgKeyGranted": orgKeyGranted,
-		"daemonVersion": Version,
+	writeJSON(w, http.StatusOK, struct {
+		OK            bool   `json:"ok"`
+		Authenticated bool   `json:"authenticated"`
+		OrgKeyGranted bool   `json:"orgKeyGranted"`
+		DaemonVersion string `json:"daemonVersion"`
+	}{
+		OK:            true,
+		Authenticated: status.Authenticated,
+		OrgKeyGranted: status.OrgKeyGranted,
+		DaemonVersion: Version,
 	})
 }
 
@@ -88,17 +91,26 @@ func (s *Server) handleBrowserLease(w http.ResponseWriter, r *http.Request) {
 
 	token, err := s.token()
 	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]any{"ok": false, "error": "daemon is not signed in"})
+		writeJSON(w, http.StatusUnauthorized, struct {
+			OK    bool   `json:"ok"`
+			Error string `json:"error"`
+		}{Error: "daemon is not signed in"})
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
 	if err := dynsecret.MintLease(ctx, s.client, token, leaseId, orgkey.Device); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
+		writeJSON(w, http.StatusBadRequest, struct {
+			OK    bool   `json:"ok"`
+			Error string `json:"error"`
+		}{Error: err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "leaseId": leaseId})
+	writeJSON(w, http.StatusOK, struct {
+		OK      bool   `json:"ok"`
+		LeaseId string `json:"leaseId"`
+	}{OK: true, LeaseId: leaseId})
 }
 
 // writeBrowserCORS reflects the Origin only when it is on the dashboard
@@ -165,7 +177,7 @@ func selfHostedDashboard(origin *url.URL, baseURL string) bool {
 	return host == baseHost || "daemon."+host == baseHost
 }
 
-func writeJSON(w http.ResponseWriter, status int, body map[string]any) {
+func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)

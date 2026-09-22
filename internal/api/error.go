@@ -3,8 +3,8 @@ package api
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/http"
+	"strconv"
 )
 
 type APIError struct {
@@ -14,7 +14,7 @@ type APIError struct {
 }
 
 func (e *APIError) Error() string {
-	return fmt.Sprintf("%d: %s", e.Status, e.Message)
+	return strconv.Itoa(e.Status) + ": " + e.Message
 }
 
 func readError(response *http.Response) error {

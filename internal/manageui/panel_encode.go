@@ -12,15 +12,15 @@ type panelSnap struct {
 	Email           string         `json:"email"`
 	Organization    string         `json:"organization"`
 	APILabel        string         `json:"apiLabel"`
+	LoginCode       string         `json:"loginCode"`
+	LoginError      string         `json:"loginError"`
+	UpdateTitle     string         `json:"updateTitle"`
+	Profiles        []panelProfile `json:"profiles"`
 	Authenticated   bool           `json:"authenticated"`
 	Running         bool           `json:"running"`
 	CanLogin        bool           `json:"canLogin"`
 	LoginInProgress bool           `json:"loginInProgress"`
-	LoginCode       string         `json:"loginCode"`
-	LoginError      string         `json:"loginError"`
-	UpdateTitle     string         `json:"updateTitle"`
 	ScanInProgress  bool           `json:"scanInProgress"`
-	Profiles        []panelProfile `json:"profiles"`
 }
 
 type panelProfile struct {

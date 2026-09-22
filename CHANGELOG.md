@@ -10,6 +10,9 @@ matching section into the GitHub Release.
 - Reorganized the daemon internals: org-key unwrap and dotenv export are shared
   packages, the CLI and socket server are split by command, and dynamic-secret
   providers live under `internal/dynsecret/provider`.
+- Socket and dashboard loopback replies use typed structs instead of
+  `map[string]any`, so each secrets/status write no longer boxes bools and
+  strings onto the heap.
 
 ## 1.3.0 - 2026-09-19
 
