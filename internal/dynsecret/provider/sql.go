@@ -48,7 +48,9 @@ func runSQL(ctx context.Context, driver, dsn, script string) error {
 	}
 	for _, stmt := range splitStatements(script) {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {
-			return fmt.Errorf("%s: %w", truncate(stmt, 80), err)
+			// The statement has the minted password substituted in. Do not
+			// attach it to the error, or it lands in the log and the lease record.
+			return fmt.Errorf("statement failed: %w", err)
 		}
 	}
 	return nil
@@ -63,14 +65,6 @@ func splitStatements(script string) []string {
 		}
 	}
 	return out
-}
-
-func truncate(s string, n int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
 }
 
 // writeTempCA stages a PEM CA bundle from the provider config so drivers that

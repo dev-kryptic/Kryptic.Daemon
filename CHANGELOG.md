@@ -5,6 +5,12 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+### Fixed
+
+- A failed dynamic lease no longer writes the driver error to the log, and
+  SQL and Redis failures no longer include the rendered statement. That
+  statement contains the minted password.
+
 ### Changed
 
 - Reorganized the daemon internals: org-key unwrap and dotenv export are shared
