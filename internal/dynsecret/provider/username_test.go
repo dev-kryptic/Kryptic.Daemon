@@ -1,4 +1,4 @@
-package dynsecret
+package provider
 
 import "testing"
 

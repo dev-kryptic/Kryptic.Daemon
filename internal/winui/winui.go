@@ -71,12 +71,12 @@ const (
 	SIFPos          = 0x0004
 	SWPNoZOrder     = 0x0004
 	SWPNoActivate   = 0x0010
-	WMApp            = 0x8000
-	SWHide           = 0
-	SWRestore        = 9
-	PBMSetPos        = WMUser + 2
-	PBMSetRange32    = WMUser + 6
-	PBSSmooth        = 1
+	WMApp           = 0x8000
+	SWHide          = 0
+	SWRestore       = 9
+	PBMSetPos       = WMUser + 2
+	PBMSetRange32   = WMUser + 6
+	PBSSmooth       = 1
 
 	IconSmall   = 0
 	IconBig     = 1

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	dyn "github.com/dev-kryptic/daemon/dynsecret"
 	"github.com/dev-kryptic/daemon/internal/api"
 	"github.com/dev-kryptic/daemon/internal/applog"
+	"github.com/dev-kryptic/daemon/internal/dynsecret/provider"
 )
 
 // CleanupInterval is how often an optional connector reaps this identity's
@@ -139,14 +139,16 @@ func processWork(ctx context.Context, client *api.Client, accessToken string, or
 	}
 	for _, item := range batch.Items {
 		if err := applyBatchItem(ctx, client, accessToken, orgKey, batch.OrgKeyId, item); err != nil {
-			log.Printf("lease %s: %v", item.LeaseId, err)
+			// The error can carry the rendered statement, which includes the
+			// minted password. Keep the lease id and leave the text off the log.
+			log.Printf("lease %s failed", item.LeaseId)
 		}
 	}
 	return nil
 }
 
-func applyBatchItem(ctx context.Context, client *api.Client, accessToken string, orgKey []byte, orgKeyId string, item dyn.WorkItem) error {
-	return dyn.Apply(ctx, orgKey, orgKeyId, item, func(body dyn.CompleteLease) error {
+func applyBatchItem(ctx context.Context, client *api.Client, accessToken string, orgKey []byte, orgKeyId string, item provider.WorkItem) error {
+	return provider.Apply(ctx, orgKey, orgKeyId, item, func(body provider.CompleteLease) error {
 		_, err := client.CompleteDynamicWork(accessToken, api.CompleteDynamicLease{
 			LeaseId:        body.LeaseId,
 			Ok:             body.Ok,

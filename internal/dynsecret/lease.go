@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/dev-kryptic/Kryptic.Encryption.Go/envelope"
-	dyn "github.com/dev-kryptic/daemon/dynsecret"
 	"github.com/dev-kryptic/daemon/internal/api"
+	"github.com/dev-kryptic/daemon/internal/dynsecret/provider"
 )
 
 // Result is the injected pairs plus the lease ids this process must revoke
@@ -45,7 +45,7 @@ func Fetch(ctx context.Context, client *api.Client, accessToken, projectPublicId
 		if err != nil {
 			return Result{}, fmt.Errorf("decrypt %s: %w", hint.Key, err)
 		}
-		var minted dyn.Minted
+		var minted provider.Minted
 		if err := json.Unmarshal(plaintext, &minted); err != nil {
 			return Result{}, fmt.Errorf("%s minted value is not JSON: %w", hint.Key, err)
 		}
@@ -60,7 +60,7 @@ type Pair struct {
 	Value string
 }
 
-func Expand(key string, minted dyn.Minted) []Pair {
+func Expand(key string, minted provider.Minted) []Pair {
 	pairs := []Pair{
 		{Key: key + "_USERNAME", Value: minted.Username},
 		{Key: key + "_PASSWORD", Value: minted.Password},

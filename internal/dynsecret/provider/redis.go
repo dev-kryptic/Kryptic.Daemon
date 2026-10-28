@@ -1,4 +1,4 @@
-package dynsecret
+package provider
 
 import (
 	"context"
@@ -57,7 +57,8 @@ func redisDo(ctx context.Context, client *redis.Client, script string) error {
 			raw[i] = a
 		}
 		if err := client.Do(ctx, raw...).Err(); err != nil {
-			return fmt.Errorf("%s: %w", line, err)
+			// The command line has the minted password substituted in.
+			return fmt.Errorf("redis command failed: %w", err)
 		}
 	}
 	return nil

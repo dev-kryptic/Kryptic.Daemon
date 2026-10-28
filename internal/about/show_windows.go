@@ -107,8 +107,8 @@ var (
 	smallFont windows.Handle
 	linkFont  windows.Handle
 
-	tagHWND    windows.Handle
-	verHWND    windows.Handle
+	tagHWND   windows.Handle
+	verHWND   windows.Handle
 	blurbHWND windows.Handle
 	linkHWND  windows.Handle
 )

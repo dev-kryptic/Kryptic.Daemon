@@ -8,9 +8,9 @@ import (
 // Options is the parsed `kryptic scan` command line.
 type Options struct {
 	Root       string
+	ExportPath string
 	Staged     bool
 	Export     bool
-	ExportPath string
 	Progress   bool
 }
 

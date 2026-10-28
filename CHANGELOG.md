@@ -5,6 +5,21 @@ matching section into the GitHub Release.
 
 ## Unreleased
 
+### Fixed
+
+- A failed dynamic lease no longer writes the driver error to the log, and
+  SQL and Redis failures no longer include the rendered statement. That
+  statement contains the minted password.
+
+### Changed
+
+- Reorganized the daemon internals: org-key unwrap and dotenv export are shared
+  packages, the CLI and socket server are split by command, and dynamic-secret
+  providers live under `internal/dynsecret/provider`.
+- Socket and dashboard loopback replies use typed structs instead of
+  `map[string]any`, so each secrets/status write no longer boxes bools and
+  strings onto the heap.
+
 ## 1.3.0 - 2026-09-19
 
 ### Fixed

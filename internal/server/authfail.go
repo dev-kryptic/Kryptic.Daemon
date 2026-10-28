@@ -9,8 +9,13 @@ import (
 )
 
 func isUnauthorized(err error) bool {
-	var apiError *api.APIError
-	return errors.As(err, &apiError) && apiError.Status == httpStatusUnauthorized
+	for err != nil {
+		if e, ok := err.(*api.APIError); ok {
+			return e.Status == httpStatusUnauthorized
+		}
+		err = errors.Unwrap(err)
+	}
+	return false
 }
 
 const httpStatusUnauthorized = 401

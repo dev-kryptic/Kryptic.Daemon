@@ -227,6 +227,16 @@ func ResetAllDevices(_ *api.Client) error {
 // Delete removes one profile: revoke its session and device on that profile's
 // server, then drop its keys from this install.
 func Delete(idOrEmail string) error {
+	if err := RemoveProfile(idOrEmail); err != nil {
+		return err
+	}
+	_, _ = ipc.Request(map[string]any{"type": "reset-auth"})
+	return nil
+}
+
+// RemoveProfile is Delete without notifying a running daemon. The socket
+// server uses this so it can drop in-memory state itself.
+func RemoveProfile(idOrEmail string) error {
 	store, err := authstore.LoadStore()
 	if err != nil {
 		return err
@@ -240,8 +250,35 @@ func Delete(idOrEmail string) error {
 		return err
 	}
 	applog.Event("cli", "auth.profile.delete")
-	_, _ = ipc.Request(map[string]any{"type": "reset-auth"})
 	return nil
+}
+
+// AccessToken exchanges the stored refresh token for an access token,
+// persisting the rotated refresh token (and keeping the device keys) in place.
+func AccessToken(client *api.Client) (string, error) {
+	var accessToken string
+	err := authstore.WithLock(func() error {
+		session, err := authstore.LoadSession()
+		if err != nil {
+			return err
+		}
+		if session.RefreshToken == "" {
+			return authstore.ErrNotLoggedIn
+		}
+		tokens, err := client.Refresh(session.RefreshToken)
+		if err != nil {
+			applog.Error("cli", "auth.refresh", err, "result=error")
+			return err
+		}
+		session.RefreshToken = tokens.RefreshToken
+		if err := authstore.SaveSession(session); err != nil {
+			applog.Error("cli", "auth.save", err, "result=error")
+			return err
+		}
+		accessToken = tokens.AccessToken
+		return nil
+	})
+	return accessToken, err
 }
 
 // SetActiveAPI updates the active profile's Daemon BFF and signs that
